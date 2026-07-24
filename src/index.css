@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-ink font-sans antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  * {
+    @apply border-slate-200;
+  }
+
+  .dark body {
+    @apply bg-slate-950 text-slate-100;
+  }
+
+  .dark * {
+    @apply border-slate-800;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold tracking-tight;
+    line-height: 1.2;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap;
+  }
+  .btn-primary {
+    @apply btn bg-primary text-white px-4 py-2.5 text-sm shadow-sm hover:bg-primary-dark hover:shadow-md active:scale-[0.98];
+  }
+  .btn-secondary {
+    @apply btn bg-white text-ink border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50 hover:border-slate-300 active:scale-[0.98];
+  }
+  .btn-ghost {
+    @apply btn text-ink-soft px-3 py-2 text-sm hover:bg-slate-100 hover:text-ink;
+  }
+  .btn-danger {
+    @apply btn bg-error text-white px-4 py-2.5 text-sm hover:bg-error-dark active:scale-[0.98];
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs rounded-lg;
+  }
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+
+  .card {
+    @apply rounded-2xl bg-white border border-slate-200/80 shadow-card;
+  }
+  .dark .card {
+    @apply bg-slate-900 border-slate-800;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-muted transition-all focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10;
+  }
+  .dark .input {
+    @apply border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500 focus:border-primary;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-ink-soft mb-1.5;
+  }
+  .dark .label {
+    @apply text-slate-300;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .badge-success {
+    @apply badge bg-success-bg text-success-dark;
+  }
+  .badge-warning {
+    @apply badge bg-warning-bg text-warning-dark;
+  }
+  .badge-error {
+    @apply badge bg-error-bg text-error-dark;
+  }
+  .badge-primary {
+    @apply badge bg-primary-50 text-primary-700;
+  }
+  .badge-neutral {
+    @apply badge bg-slate-100 text-slate-600;
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-ink-soft transition-all hover:bg-slate-100 hover:text-ink;
+  }
+  .sidebar-link-active {
+    @apply bg-primary-50 text-primary-700 font-semibold;
+  }
+  .dark .sidebar-link {
+    @apply text-slate-400 hover:bg-slate-800 hover:text-slate-100;
+  }
+  .dark .sidebar-link-active {
+    @apply bg-primary-500/15 text-primary-light;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(203 213 225) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(203 213 225);
+    border-radius: 9999px;
+  }
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(51 65 85);
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
