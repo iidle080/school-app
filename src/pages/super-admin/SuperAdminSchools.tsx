@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Building2, Plus, Mail, Phone, MapPin, User, Send, Copy, Check } from 'lucide-react';
+import { Building2, Plus, Mail, Phone, MapPin, User, Send, Copy, Check, Pencil, Trash2, MoreVertical } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
@@ -12,8 +12,8 @@ import { Badge, statusBadge } from '@/components/ui/Badge';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { RowSkeleton } from '@/components/ui/Spinner';
 import { generateToken, daysFromNow, formatDate } from '@/lib/utils';
-import { PLAN_LABELS, INVITATION_EXPIRY_DAYS } from '@/lib/constants';
-import type { School, Invitation } from '@/types';
+import { PLAN_LABELS, INVITATION_EXPIRY_DAYS, SCHOOL_STATUS_LABELS } from '@/lib/constants';
+import type { School, SchoolStatus, Invitation } from '@/types';
 
 export function SuperAdminSchools() {
   const { user } = useAuth();
@@ -23,6 +23,10 @@ export function SuperAdminSchools() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [showInvite, setShowInvite] = useState<School | null>(null);
+  const [editSchool, setEditSchool] = useState<School | null>(null);
+  const [deleteSchool, setDeleteSchool] = useState<School | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [createdLink, setCreatedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -40,6 +44,17 @@ export function SuperAdminSchools() {
   useEffect(() => { load(); }, []);
 
   const inviteForSchool = (schoolId: string) => invitations.find((i) => i.school_id === schoolId && i.status === 'pending');
+
+  const confirmDelete = async () => {
+    if (!deleteSchool) return;
+    setDeleting(true);
+    const { error } = await supabase.from('schools').delete().eq('id', deleteSchool.id);
+    setDeleting(false);
+    if (error) { toast(error.message, 'error'); return; }
+    toast(`${deleteSchool.name} has been deleted.`, 'success');
+    setDeleteSchool(null);
+    load();
+  };
 
   const columns: Column<School>[] = [
     {
@@ -67,12 +82,44 @@ export function SuperAdminSchools() {
       key: 'actions', header: '',
       render: (s) => {
         const inv = inviteForSchool(s.id);
-        return inv ? (
-          <Button size="sm" variant="secondary" onClick={() => { setShowInvite(s); setCreatedLink(`${window.location.origin}/invite/${inv.token}`); }}>
-            View Invite
-          </Button>
-        ) : (
-          <Button size="sm" variant="secondary" onClick={() => setShowInvite(s)}>Invite Admin</Button>
+        return (
+          <div className="flex items-center justify-end gap-2">
+            {inv ? (
+              <Button size="sm" variant="secondary" onClick={() => { setShowInvite(s); setCreatedLink(`${window.location.origin}/invite/${inv.token}`); }}>
+                View Invite
+              </Button>
+            ) : (
+              <Button size="sm" variant="secondary" onClick={() => setShowInvite(s)}>Invite Admin</Button>
+            )}
+            <div className="relative">
+              <button
+                onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === s.id ? null : s.id); }}
+                className="rounded-lg p-1.5 text-ink-muted hover:bg-slate-100 hover:text-ink dark:hover:bg-slate-800 transition-colors"
+                aria-label="More actions"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+              {menuOpenId === s.id && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpenId(null)} />
+                  <div className="absolute right-0 top-8 z-20 w-36 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg py-1">
+                    <button
+                      onClick={() => { setMenuOpenId(null); setEditSchool(s); }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-ink dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </button>
+                    <button
+                      onClick={() => { setMenuOpenId(null); setDeleteSchool(s); }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-error hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         );
       },
     },
@@ -106,6 +153,21 @@ export function SuperAdminSchools() {
         onClose={() => setShowCreate(false)}
         onCreated={(school, link) => { setShowCreate(false); setShowInvite(school); setCreatedLink(link); load(); }}
         userId={user?.id ?? ''}
+      />
+
+      <EditSchoolModal
+        open={!!editSchool}
+        school={editSchool}
+        onClose={() => setEditSchool(null)}
+        onSaved={() => { setEditSchool(null); load(); }}
+      />
+
+      <DeleteSchoolModal
+        open={!!deleteSchool}
+        school={deleteSchool}
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onClose={() => setDeleteSchool(null)}
       />
 
       <InviteLinkModal
@@ -199,6 +261,94 @@ function CreateSchoolModal({ open, onClose, onCreated, userId }: { open: boolean
   );
 }
 
+function EditSchoolModal({ open, school, onClose, onSaved }: { open: boolean; school: School | null; onClose: () => void; onSaved: () => void }) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({ name: '', address: '', email: '', phone: '', principal: '', adminName: '', adminEmail: '', adminPhone: '', status: 'pending' as SchoolStatus });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (school) {
+      setForm({
+        name: school.name ?? '',
+        address: school.address ?? '',
+        email: school.email ?? '',
+        phone: school.phone ?? '',
+        principal: school.principal_name ?? '',
+        adminName: school.admin_name ?? '',
+        adminEmail: school.admin_email ?? '',
+        adminPhone: school.admin_phone ?? '',
+        status: school.status ?? 'pending',
+      });
+    }
+  }, [school]);
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!school) return;
+    setSaving(true);
+    const { error } = await supabase.from('schools').update({
+      name: form.name,
+      address: form.address || null,
+      email: form.email || null,
+      phone: form.phone || null,
+      principal_name: form.principal || null,
+      admin_name: form.adminName || null,
+      admin_email: form.adminEmail || null,
+      admin_phone: form.adminPhone || null,
+      status: form.status,
+    }).eq('id', school.id);
+    setSaving(false);
+    if (error) { toast(error.message, 'error'); return; }
+    toast('School updated successfully.', 'success');
+    onSaved();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Edit school" description={school ? `Update details for ${school.name}` : ''} size="lg" footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button form="edit-school-form" type="submit" loading={saving}>Save changes</Button></>}>
+      <form id="edit-school-form" onSubmit={submit} className="space-y-4">
+        <Input label="School name" name="name" required value={form.name} onChange={set('name')} placeholder="Greenfield Academy" />
+        <Input label="Address" name="address" value={form.address} onChange={set('address')} leftIcon={<MapPin className="h-4 w-4" />} />
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Input label="School email" name="email" type="email" value={form.email} onChange={set('email')} leftIcon={<Mail className="h-4 w-4" />} />
+          <Input label="School phone" name="phone" value={form.phone} onChange={set('phone')} leftIcon={<Phone className="h-4 w-4" />} />
+        </div>
+        <Input label="Principal name" name="principal" value={form.principal} onChange={set('principal')} leftIcon={<User className="h-4 w-4" />} />
+        <div className="border-t border-slate-200 dark:border-slate-800 pt-4 mt-4">
+          <p className="text-sm font-semibold text-ink dark:text-slate-100 mb-3">School Administrator</p>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Input label="Admin name" name="adminName" value={form.adminName} onChange={set('adminName')} />
+            <Input label="Admin email" name="adminEmail" type="email" value={form.adminEmail} onChange={set('adminEmail')} />
+            <Input label="Admin phone" name="adminPhone" value={form.adminPhone} onChange={set('adminPhone')} />
+            <Select label="Status" value={form.status} onChange={set('status')}>
+              {Object.entries(SCHOOL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </Select>
+          </div>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DeleteSchoolModal({ open, school, loading, onConfirm, onClose }: { open: boolean; school: School | null; loading: boolean; onConfirm: () => void; onClose: () => void }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Delete school" size="sm" footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="danger" loading={loading} onClick={onConfirm}>Delete school</Button></>}>
+      <div className="space-y-3">
+        <div className="flex items-center gap-3 rounded-xl bg-error/10 p-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-error/15 text-error">
+            <Trash2 className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-medium text-ink dark:text-slate-100">Delete {school?.name}?</p>
+            <p className="text-sm text-ink-muted mt-0.5">This will permanently remove the school and all its data — students, staff, classes, records, and invitations. This cannot be undone.</p>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function InviteLinkModal({ open, school, link, copied, toast, onClose, onCopy, onGenerate }: {
   open: boolean; school: School | null; link: string | null; copied: boolean;
   toast: (m: string, t?: 'success' | 'error' | 'warning' | 'info') => void;
@@ -231,4 +381,3 @@ function InviteLinkModal({ open, school, link, copied, toast, onClose, onCopy, o
     </Modal>
   );
 }
-
