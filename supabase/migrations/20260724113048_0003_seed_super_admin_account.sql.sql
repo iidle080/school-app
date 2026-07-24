@@ -65,7 +65,37 @@ WHERE NOT EXISTS (
 );
 
 -- =========================================================
--- 2. Create the app_users profile row
+-- 2. Create the auth.identities row (required by GoTrue for password auth)
+--    GoTrue expects a matching identity row with provider='email'.
+--    Without it, signInWithPassword returns "Database error querying schema".
+-- =========================================================
+INSERT INTO auth.identities (
+  provider_id,
+  user_id,
+  identity_data,
+  provider,
+  last_sign_in_at,
+  created_at,
+  updated_at,
+  id
+)
+SELECT
+  u.id::text,
+  u.id,
+  jsonb_build_object('sub', u.id::text, 'email', u.email),
+  'email',
+  now(),
+  now(),
+  now(),
+  gen_random_uuid()
+FROM auth.users u
+WHERE u.email = 'owner@edubridge.io'
+  AND NOT EXISTS (
+    SELECT 1 FROM auth.identities i WHERE i.user_id = u.id
+  );
+
+-- =========================================================
+-- 3. Create the app_users profile row
 -- =========================================================
 INSERT INTO public.app_users (
   user_id,
