@@ -73,16 +73,17 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // Caller authorization: super_admin may create school_admin; school_admin may create
-  // teacher/parent within their own school.
-  if (callerRole !== "super_admin") {
-    const { data: callerProfile } = await admin
-      .from("app_users")
-      .select("school_id, role")
-      .eq("user_id", callerUserId)
-      .maybeSingle();
-    const cp = callerProfile as { school_id: string | null; role: string } | null;
-    if (!cp || cp.role !== "school_admin" || cp.school_id !== school_id) {
+  // Resolve caller role: prefer app_users table (source of truth) over JWT claim.
+  const { data: callerProfile } = await admin
+    .from("app_users")
+    .select("school_id, role")
+    .eq("user_id", callerUserId)
+    .maybeSingle();
+  const cp = callerProfile as { school_id: string | null; role: string } | null;
+  const resolvedCallerRole = cp?.role ?? callerRole ?? "";
+
+  if (resolvedCallerRole !== "super_admin") {
+    if (resolvedCallerRole !== "school_admin" || cp?.school_id !== school_id) {
       return json({ error: "Not allowed to create users for this school." }, 403);
     }
     if (role === "school_admin") {

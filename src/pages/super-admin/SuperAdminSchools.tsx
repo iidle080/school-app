@@ -278,7 +278,11 @@ function CreateSchoolModal({ open, onClose, onCreated, userId }: { open: boolean
         schoolId: school.id,
         email: adminEmail,
       });
-      if (demoErr) { toast(`School created, but demo account setup failed: ${demoErr}`, 'warning'); }
+      if (demoErr) {
+        setSaving(false);
+        toast(`Account creation failed: ${demoErr}`, 'error');
+        return;
+      }
       const created = school as School;
       created.admin_email = adminEmail;
       setSaving(false);
