@@ -92,12 +92,14 @@ Deno.serve(async (req: Request) => {
   }
 
   // Create the auth user with role metadata so the JWT carries the role claim.
+  // Include provider/providers in app_metadata and email_verified in user_metadata
+  // — GoTrue requires these for password authentication to succeed.
   const { data: signUp, error: signUpErr } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
-    user_metadata: { full_name: full_name },
-    app_metadata: { role },
+    user_metadata: { full_name: full_name, email_verified: true },
+    app_metadata: { role, provider: "email", providers: ["email"] },
   });
   if (signUpErr) {
     return json({ error: signUpErr.message }, 400);
