@@ -14,7 +14,10 @@ import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Avatar } from '@/components/ui/Avatar';
 import { RowSkeleton } from '@/components/ui/Spinner';
 import { generateToken, daysFromNow, formatDate, relativeTime } from '@/lib/utils';
-import { INVITATION_EXPIRY_DAYS } from '@/lib/constants';
+import { INVITATION_EXPIRY_DAYS, DEMO_MODE, DEMO_PASSWORD } from '@/lib/constants';
+import { demoEmailFor, schoolSlugFromName, createDemoUser, type DemoCredentials } from '@/lib/demo';
+import { DemoCredentialsCard } from '@/components/demo/DemoUI';
+import { useSchool } from '@/hooks/useSchool';
 import type { AppUser, Invitation, ClassRow } from '@/types';
 import type { UserRole } from '@/types';
 
@@ -23,6 +26,7 @@ export function StaffManagement({ role }: { role: 'teacher' | 'parent' }) {
   const { user, profile } = useAuth();
   const { toast } = useToast();
   const { teachers, parents, students, classes, loading, refresh } = useSchoolData();
+  const { school } = useSchool();
   const isTeacher = role === 'teacher';
   const list = isTeacher ? teachers : parents;
 
@@ -32,6 +36,7 @@ export function StaffManagement({ role }: { role: 'teacher' | 'parent' }) {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [copied, setCopied] = useState(false);
+  const [demoCreds, setDemoCreds] = useState<DemoCredentials | null>(null);
 
   const loadInvites = async () => {
     if (!profile?.school_id) return;
@@ -90,9 +95,15 @@ export function StaffManagement({ role }: { role: 'teacher' | 'parent' }) {
         schoolId={profile?.school_id ?? ''}
         classes={classes}
         students={students}
+        schoolName={school?.name}
         onClose={() => { setShowForm(false); setEditing(null); }}
         onSaved={() => { setShowForm(false); setEditing(null); refresh(); }}
+        onDemoCreated={(creds) => { setShowForm(false); setEditing(null); refresh(); setDemoCreds(creds); }}
       />
+
+      <Modal open={!!demoCreds} onClose={() => setDemoCreds(null)} title={`${role === 'teacher' ? 'Teacher' : 'Parent'} account ready`}>
+        {demoCreds && <DemoCredentialsCard credentials={demoCreds} />}
+      </Modal>
 
       <InviteModal
         open={!!showInvite}
@@ -124,17 +135,17 @@ export function StaffManagement({ role }: { role: 'teacher' | 'parent' }) {
 export function SchoolAdminTeachers() { return <StaffManagement role="teacher" />; }
 export function SchoolAdminParents() { return <StaffManagement role="parent" />; }
 
-function StaffFormModal({ open, editing, role, schoolId, onClose, onSaved }: {
+function StaffFormModal({ open, editing, role, schoolId, schoolName, students, onClose, onSaved, onDemoCreated }: {
   open: boolean; editing: AppUser | null; role: UserRole; schoolId: string;
-  classes: ClassRow[]; students: any[];
-  onClose: () => void; onSaved: () => void;
+  classes: ClassRow[]; students: any[]; schoolName?: string;
+  onClose: () => void; onSaved: () => void; onDemoCreated: (c: DemoCredentials) => void;
 }) {
   const { toast } = useToast();
-  const [form, setForm] = useState({ full_name: '', phone: '' });
+  const [form, setForm] = useState({ full_name: '', phone: '', student_id: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setForm({ full_name: editing?.full_name ?? '', phone: editing?.phone ?? '' });
+    setForm({ full_name: editing?.full_name ?? '', phone: editing?.phone ?? '', student_id: '' });
   }, [editing, open]);
 
   const submit = async (e: FormEvent) => {
@@ -144,11 +155,36 @@ function StaffFormModal({ open, editing, role, schoolId, onClose, onSaved }: {
       const { error } = await supabase.from('app_users').update({ full_name: form.full_name, phone: form.phone }).eq('id', editing.id);
       if (error) { setSaving(false); toast(error.message, 'error'); return; }
       toast('Updated.', 'success');
-    } else {
-      // Creating a staff member creates a profile placeholder; the actual auth user is created when they accept the invitation.
-      // We store the name/phone so the admin can see the pending entry and generate an invite.
-      toast('Profile saved. Generate an invitation to activate their account.', 'success');
+      setSaving(false);
+      onSaved();
+      return;
     }
+
+    if (DEMO_MODE) {
+      const slug = schoolSlugFromName(schoolName ?? 'school');
+      const seq = Math.floor(Math.random() * 9000) + 1000;
+      const email = demoEmailFor(role, form.full_name, slug, seq);
+      const { error: demoErr } = await createDemoUser({
+        role,
+        fullName: form.full_name,
+        schoolId,
+        email,
+        studentId: role === 'parent' && form.student_id ? form.student_id : undefined,
+      });
+      setSaving(false);
+      if (demoErr) { toast(demoErr, 'error'); return; }
+      const studentName = role === 'parent' && form.student_id
+        ? students.find((s: any) => s.id === form.student_id)?.full_name
+        : undefined;
+      onDemoCreated({
+        email, password: DEMO_PASSWORD, fullName: form.full_name, role,
+        schoolId, schoolName, studentName,
+      });
+      return;
+    }
+
+    // Production mode (non-demo): placeholder profile, invitation flow activates the account.
+    toast('Profile saved. Generate an invitation to activate their account.', 'success');
     setSaving(false);
     onSaved();
   };
@@ -159,9 +195,17 @@ function StaffFormModal({ open, editing, role, schoolId, onClose, onSaved }: {
       <form id="staff-form" onSubmit={submit} className="space-y-4">
         <Input label="Full name" name="full_name" required value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} />
         <Input label="Phone number" name="phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} leftIcon={<Phone className="h-4 w-4" />} placeholder="+254…" />
+        {!editing && role === 'parent' && students.length > 0 && (
+          <Select label="Link to student" value={form.student_id} onChange={(e) => setForm((f) => ({ ...f, student_id: e.target.value }))}>
+            <option value="">Select student…</option>
+            {students.map((s: any) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+          </Select>
+        )}
         {!editing && (
           <p className="text-xs text-ink-muted rounded-xl bg-primary-50 dark:bg-primary-500/10 p-3">
-            After saving, generate an invitation link. The {role} will create their password and their account will activate automatically.
+            {DEMO_MODE
+              ? 'A demo account will be created instantly with login credentials you can share.'
+              : `After saving, generate an invitation link. The ${role} will create their password and their account will activate automatically.`}
           </p>
         )}
       </form>

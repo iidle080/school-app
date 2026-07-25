@@ -12,8 +12,10 @@ import { Badge, statusBadge } from '@/components/ui/Badge';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { RowSkeleton } from '@/components/ui/Spinner';
 import { generateToken, daysFromNow, formatDate } from '@/lib/utils';
-import { PLAN_LABELS, INVITATION_EXPIRY_DAYS, SCHOOL_STATUS_LABELS } from '@/lib/constants';
-import type { School, SchoolStatus, Invitation } from '@/types';
+import { PLAN_LABELS, INVITATION_EXPIRY_DAYS, SCHOOL_STATUS_LABELS, DEMO_MODE, DEMO_PASSWORD } from '@/lib/constants';
+import { demoEmailFor, schoolSlugFromName, createDemoUser, type DemoCredentials } from '@/lib/demo';
+import { DemoCredentialsCard } from '@/components/demo/DemoUI';
+import type { School, SchoolStatus, Invitation, UserRole } from '@/types';
 
 export function SuperAdminSchools() {
   const { user } = useAuth();
@@ -23,6 +25,8 @@ export function SuperAdminSchools() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [showInvite, setShowInvite] = useState<School | null>(null);
+  const [demoCreds, setDemoCreds] = useState<DemoCredentials | null>(null);
+  const [demoSchool, setDemoSchool] = useState<School | null>(null);
   const [editSchool, setEditSchool] = useState<School | null>(null);
   const [deleteSchool, setDeleteSchool] = useState<School | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -151,9 +155,31 @@ export function SuperAdminSchools() {
       <CreateSchoolModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
-        onCreated={(school, link) => { setShowCreate(false); setShowInvite(school); setCreatedLink(link); load(); }}
+        onCreated={async (school, link) => {
+          setShowCreate(false);
+          load();
+          if (DEMO_MODE) {
+            const creds: DemoCredentials = {
+              email: school.admin_email ?? demoEmailFor('school_admin', school.admin_name ?? 'Admin', schoolSlugFromName(school.name), 1),
+              password: DEMO_PASSWORD,
+              fullName: school.admin_name ?? 'School Admin',
+              role: 'school_admin' as UserRole,
+              schoolId: school.id,
+              schoolName: school.name,
+            };
+            setDemoSchool(school);
+            setDemoCreds(creds);
+          } else {
+            setShowInvite(school);
+            setCreatedLink(link);
+          }
+        }}
         userId={user?.id ?? ''}
       />
+
+      <Modal open={!!demoCreds} onClose={() => { setDemoCreds(null); setDemoSchool(null); }} title="School created" description={demoSchool ? `${demoSchool.name} is ready.` : ''}>
+        {demoCreds && <DemoCredentialsCard credentials={demoCreds} />}
+      </Modal>
 
       <EditSchoolModal
         open={!!editSchool}
@@ -229,6 +255,26 @@ function CreateSchoolModal({ open, onClose, onCreated, userId }: { open: boolean
       school_id: school.id, token, role: 'school_admin', email: form.adminEmail, full_name: form.adminName,
       status: 'pending', channel: 'email', expires_at: daysFromNow(INVITATION_EXPIRY_DAYS), created_by: userId,
     });
+
+    // Demo Mode: create the school admin auth account + profile immediately.
+    if (DEMO_MODE) {
+      const adminEmail = form.adminEmail && form.adminEmail.includes('@')
+        ? form.adminEmail
+        : demoEmailFor('school_admin', form.adminName, schoolSlugFromName(form.name), 1);
+      const { error: demoErr } = await createDemoUser({
+        role: 'school_admin',
+        fullName: form.adminName,
+        schoolId: school.id,
+        email: adminEmail,
+      });
+      if (demoErr) { toast(`School created, but demo account setup failed: ${demoErr}`, 'warning'); }
+      const created = school as School;
+      created.admin_email = adminEmail;
+      setSaving(false);
+      setForm({ name: '', address: '', email: '', phone: '', principal: '', adminName: '', adminEmail: '', adminPhone: '', plan: 'starter' });
+      onCreated(created, '');
+      return;
+    }
 
     setSaving(false);
     setForm({ name: '', address: '', email: '', phone: '', principal: '', adminName: '', adminEmail: '', adminPhone: '', plan: 'starter' });

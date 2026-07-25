@@ -2,6 +2,12 @@ import type { UserRole } from '@/types';
 
 export const APP_NAME = 'EduBridge';
 
+// Demo Mode — temporary. When email/SMS services are connected, set to false
+// or remove to restore the production invitation-only onboarding flow.
+export const DEMO_MODE = true;
+export const DEMO_PASSWORD = 'Password123!';
+export const DEMO_EMAIL_DOMAIN = 'edubridge.demo';
+
 export const PRIVATE_SUPER_ADMIN_PATH = '/owner/login';
 
 export const INVITATION_EXPIRY_DAYS = 7;

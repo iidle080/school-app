@@ -5,8 +5,9 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { Logo } from '@/components/Logo';
 import { Avatar } from '@/components/ui/Avatar';
-import { ROLE_LABELS } from '@/lib/constants';
+import { ROLE_LABELS, DEMO_MODE } from '@/lib/constants';
 import { cn } from '@/lib/utils';
+import { DemoModeBadge } from '@/components/demo/DemoUI';
 
 export interface NavItem {
   label: string;
@@ -67,10 +68,11 @@ export function DashboardLayout({ navItems, schoolName, schoolLogo }: DashboardL
             <Menu className="h-5 w-5" />
           </button>
 
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 flex items-center gap-3">
             <h2 className="font-semibold text-ink dark:text-slate-100 truncate">
               {activeItem?.label ?? 'Dashboard'}
             </h2>
+            {DEMO_MODE && <DemoModeBadge />}
           </div>
 
           <button
