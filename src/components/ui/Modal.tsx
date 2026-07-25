@@ -34,11 +34,12 @@ export function Modal({ open, onClose, title, description, children, footer, siz
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in-fast">
+    <div className="fixed inset-0 z-50 overflow-y-auto animate-fade-in-fast">
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="flex min-h-full items-start justify-center p-4 sm:items-center">
       <div
         className={cn(
-          'relative w-full bg-white dark:bg-slate-900 rounded-2xl shadow-card-hover animate-scale-in max-h-[90vh] flex flex-col',
+          'relative w-full bg-white dark:bg-slate-900 rounded-2xl shadow-card-hover animate-scale-in my-4 sm:my-8 flex flex-col',
           SIZE_CLASSES[size],
         )}
       >
@@ -60,6 +61,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
             {footer}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

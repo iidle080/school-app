@@ -31,6 +31,7 @@ export function SuperAdminSchools() {
   const [deleteSchool, setDeleteSchool] = useState<School | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const [createdLink, setCreatedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -95,33 +96,20 @@ export function SuperAdminSchools() {
             ) : (
               <Button size="sm" variant="secondary" onClick={() => setShowInvite(s)}>Invite Admin</Button>
             )}
-            <div className="relative">
+            <div>
               <button
-                onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === s.id ? null : s.id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (menuOpenId === s.id) { setMenuOpenId(null); setMenuPos(null); return; }
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                  setMenuOpenId(s.id);
+                }}
                 className="rounded-lg p-1.5 text-ink-muted hover:bg-slate-100 hover:text-ink dark:hover:bg-slate-800 transition-colors"
                 aria-label="More actions"
               >
                 <MoreVertical className="h-4 w-4" />
               </button>
-              {menuOpenId === s.id && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpenId(null)} />
-                  <div className="absolute right-0 top-8 z-20 w-36 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg py-1">
-                    <button
-                      onClick={() => { setMenuOpenId(null); setEditSchool(s); }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-ink dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                    >
-                      <Pencil className="h-3.5 w-3.5" /> Edit
-                    </button>
-                    <button
-                      onClick={() => { setMenuOpenId(null); setDeleteSchool(s); }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-error hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> Delete
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
           </div>
         );
@@ -195,6 +183,29 @@ export function SuperAdminSchools() {
         onConfirm={confirmDelete}
         onClose={() => setDeleteSchool(null)}
       />
+
+      {menuOpenId && menuPos && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => { setMenuOpenId(null); setMenuPos(null); }} />
+          <div
+            className="fixed z-50 w-36 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg py-1"
+            style={{ top: menuPos.top, right: menuPos.right }}
+          >
+            <button
+              onClick={() => { const s = schools.find((x) => x.id === menuOpenId); setMenuOpenId(null); setMenuPos(null); if (s) setEditSchool(s); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-ink dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </button>
+            <button
+              onClick={() => { const s = schools.find((x) => x.id === menuOpenId); setMenuOpenId(null); setMenuPos(null); if (s) setDeleteSchool(s); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-error hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </button>
+          </div>
+        </>
+      )}
 
       <InviteLinkModal
         open={!!showInvite}
