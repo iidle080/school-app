@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
-import { GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, BellRing, User, Send, Download, Printer } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, BellRing, User, Send, Download, Printer, ChevronRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { useParent } from '@/context/ParentContext';
 import { useSchool } from '@/hooks/useSchool';
 import { useToast } from '@/context/ToastContext';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -16,45 +18,39 @@ import { RowSkeleton, CardSkeleton } from '@/components/ui/Spinner';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { formatDate, relativeTime, percentage, gradeFromPercentage } from '@/lib/utils';
 import { ATTENDANCE_LABELS } from '@/lib/constants';
-import type { Student, Attendance, Homework, ExamMark, ReportCard, Message, Notification, AppUser } from '@/types';
+import type { Student, Attendance, Homework, ExamMark, ReportCard, Message, Notification, AppUser, ClassRow } from '@/types';
 
-function useMyChildren() {
-  const { profile } = useAuth();
-  const [children, setChildren] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!profile?.user_id || !profile?.school_id) return;
-    (async () => {
-      const { data: links } = await supabase.from('student_parents').select('student_id').eq('parent_user_id', profile.user_id);
-      const ids = (links ?? []).map((l: { student_id: string }) => l.student_id);
-      if (ids.length === 0) { setChildren([]); setLoading(false); return; }
-      const { data: studs } = await supabase.from('students').select('*').in('id', ids);
-      setChildren((studs as Student[]) ?? []); setLoading(false);
-    })();
-  }, [profile?.user_id, profile?.school_id]);
-
-  return { children, loading };
+function className(classes: ClassRow[], id: string | null): string {
+  if (!id) return '—';
+  const c = classes.find((x) => x.id === id);
+  return c ? `${c.name}${c.stream ? ` · ${c.stream}` : ''}` : '—';
 }
 
 export function ParentDashboard() {
   const { profile } = useAuth();
   const { school } = useSchool();
-  const { children, loading } = useMyChildren();
+  const { children, classes, loading, selectChild } = useParent();
+  const navigate = useNavigate();
   const [stats, setStats] = useState({ attendance: 0, homework: 0, results: 0 });
 
   useEffect(() => {
     if (children.length === 0) return;
     const ids = children.map((c) => c.id);
+    const classIds = children.map((c) => c.class_id).filter(Boolean) as string[];
     (async () => {
       const [att, hw, mk] = await Promise.all([
         supabase.from('attendance').select('id', { count: 'exact', head: true }).in('student_id', ids),
-        supabase.from('homework').select('id', { count: 'exact', head: true }).in('class_id', children.map((c) => c.class_id).filter(Boolean) as string[]),
+        supabase.from('homework').select('id', { count: 'exact', head: true }).in('class_id', classIds),
         supabase.from('exam_marks').select('id', { count: 'exact', head: true }).in('student_id', ids),
       ]);
       setStats({ attendance: att.count ?? 0, homework: hw.count ?? 0, results: mk.count ?? 0 });
     })();
   }, [children]);
+
+  const openChild = (id: string) => {
+    selectChild(id);
+    navigate('/parent/children');
+  };
 
   return (
     <div>
@@ -71,11 +67,14 @@ export function ParentDashboard() {
             <CardHeader title="My Children" />
             {children.length === 0 ? <EmptyState title="No children linked" description="Your school admin will link your children's profiles." /> : (
               <div className="space-y-2">{children.map((c) => (
-                <div key={c.id} className="flex items-center gap-3 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <button key={c.id} onClick={() => openChild(c.id)} className="flex w-full items-center gap-3 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-left transition-colors">
                   <Avatar name={c.full_name} src={c.photo_url} size="md" />
-                  <div className="flex-1"><p className="font-medium text-ink dark:text-slate-100">{c.full_name}</p><p className="text-xs text-ink-muted">#{c.admission_number}</p></div>
-                  <Badge variant="success">Active</Badge>
-                </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-ink dark:text-slate-100">{c.full_name}</p>
+                    <p className="text-xs text-ink-muted">#{c.admission_number} · {className(classes, c.class_id)}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-ink-muted" />
+                </button>
               ))}</div>
             )}
           </Card>
@@ -86,19 +85,38 @@ export function ParentDashboard() {
 }
 
 export function ParentChildren() {
-  const { children, loading } = useMyChildren();
+  const { children, classes, loading, selectChild } = useParent();
+  const navigate = useNavigate();
+
+  const openChild = (id: string) => {
+    selectChild(id);
+    navigate('/parent/attendance');
+  };
+
   return (
     <div>
-      <PageHeader title="My Children" subtitle="View your children's profiles." icon={<GraduationCap className="h-5 w-5" />} />
+      <PageHeader title="My Children" subtitle="Select a child to view their information." icon={<GraduationCap className="h-5 w-5" />} />
       {loading ? <RowSkeleton /> : children.length === 0 ? <Card><EmptyState title="No children linked" description="Your school admin will link your children's profiles." /></Card> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{children.map((c) => (
           <Card key={c.id} hover>
-            <div className="flex items-center gap-3 mb-3"><Avatar name={c.full_name} src={c.photo_url} size="lg" /><div><h3 className="font-semibold text-ink dark:text-slate-100">{c.full_name}</h3><p className="text-xs text-ink-muted">#{c.admission_number}</p></div></div>
-            <div className="space-y-1 text-sm text-ink-soft dark:text-slate-300">
-              <p>Gender: <span className="capitalize">{c.gender ?? '—'}</span></p>
-              <p>DOB: {c.date_of_birth ? formatDate(c.date_of_birth) : '—'}</p>
-              {c.medical_notes && <p className="text-warning-dark">Medical: {c.medical_notes}</p>}
-            </div>
+            <button onClick={() => openChild(c.id)} className="w-full text-left">
+              <div className="flex items-center gap-3 mb-3">
+                <Avatar name={c.full_name} src={c.photo_url} size="lg" />
+                <div>
+                  <h3 className="font-semibold text-ink dark:text-slate-100">{c.full_name}</h3>
+                  <p className="text-xs text-ink-muted">#{c.admission_number}</p>
+                </div>
+              </div>
+              <div className="space-y-1 text-sm text-ink-soft dark:text-slate-300">
+                <p>Class: {className(classes, c.class_id)}</p>
+                <p>Gender: <span className="capitalize">{c.gender ?? '—'}</span></p>
+                <p>DOB: {c.date_of_birth ? formatDate(c.date_of_birth) : '—'}</p>
+                {c.medical_notes && <p className="text-warning-dark">Medical: {c.medical_notes}</p>}
+              </div>
+              <div className="mt-3 flex items-center gap-1 text-sm font-medium text-primary-600">
+                View details <ChevronRight className="h-4 w-4" />
+              </div>
+            </button>
           </Card>
         ))}</div>
       )}
@@ -106,16 +124,33 @@ export function ParentChildren() {
   );
 }
 
+function SelectedChildBanner() {
+  const { selectedChild, children, selectChild } = useParent();
+  if (!selectedChild) return null;
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-xl bg-primary-50 dark:bg-primary-500/10 p-3">
+      <Avatar name={selectedChild.full_name} src={selectedChild.photo_url} size="sm" />
+      <div className="flex-1">
+        <p className="text-sm font-semibold text-ink dark:text-slate-100">{selectedChild.full_name}</p>
+        <p className="text-xs text-ink-muted">#{selectedChild.admission_number}</p>
+      </div>
+      {children.length > 1 && (
+        <Select value={selectedChild.id} onChange={(e) => selectChild(e.target.value)} className="w-auto text-sm">
+          {children.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+        </Select>
+      )}
+    </div>
+  );
+}
+
 export function ParentAttendance() {
-  const { children, loading } = useMyChildren();
+  const { selectedChild, loading } = useParent();
   const [records, setRecords] = useState<Attendance[]>([]);
-  const [selected, setSelected] = useState('');
 
   useEffect(() => {
-    if (children.length === 0) return;
-    const sid = selected || children[0].id;
-    supabase.from('attendance').select('*').eq('student_id', sid).order('date', { ascending: false }).limit(30).then(({ data }) => setRecords((data as Attendance[]) ?? []));
-  }, [children, selected]);
+    if (!selectedChild) { setRecords([]); return; }
+    supabase.from('attendance').select('*').eq('student_id', selectedChild.id).order('date', { ascending: false }).limit(30).then(({ data }) => setRecords((data as Attendance[]) ?? []));
+  }, [selectedChild]);
 
   const columns: Column<Attendance>[] = [
     { key: 'date', header: 'Date', render: (a) => formatDate(a.date) },
@@ -125,12 +160,10 @@ export function ParentAttendance() {
 
   return (
     <div>
-      <PageHeader title="Attendance" subtitle="Your children's attendance records." icon={<CalendarCheck className="h-5 w-5" />} />
-      {loading ? <RowSkeleton /> : (
+      <PageHeader title="Attendance" subtitle="Your child's attendance records." icon={<CalendarCheck className="h-5 w-5" />} />
+      {loading ? <RowSkeleton /> : !selectedChild ? <Card><EmptyState title="No child selected" description="Select a child from the switcher above." /></Card> : (
         <>
-          {children.length > 1 && (
-            <Card className="mb-4"><Select label="Select child" value={selected} onChange={(e) => setSelected(e.target.value)}>{children.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}</Select></Card>
-          )}
+          <SelectedChildBanner />
           <Card><DataTable columns={columns} data={records} rowKey={(a) => a.id} emptyTitle="No attendance records" /></Card>
         </>
       )}
@@ -139,42 +172,43 @@ export function ParentAttendance() {
 }
 
 export function ParentHomework() {
-  const { children, loading } = useMyChildren();
+  const { selectedChild, loading } = useParent();
   const [items, setItems] = useState<Homework[]>([]);
 
   useEffect(() => {
-    if (children.length === 0) return;
-    const classIds = children.map((c) => c.class_id).filter(Boolean) as string[];
-    if (classIds.length === 0) return;
-    supabase.from('homework').select('*').in('class_id', classIds).order('created_at', { ascending: false }).then(({ data }) => setItems((data as Homework[]) ?? []));
-  }, [children]);
+    if (!selectedChild?.class_id) { setItems([]); return; }
+    supabase.from('homework').select('*').eq('class_id', selectedChild.class_id).order('created_at', { ascending: false }).then(({ data }) => setItems((data as Homework[]) ?? []));
+  }, [selectedChild]);
 
   return (
     <div>
-      <PageHeader title="Homework" subtitle="Homework assigned to your children." icon={<BookCopy className="h-5 w-5" />} />
-      {loading ? <RowSkeleton /> : items.length === 0 ? <Card><EmptyState title="No homework" /></Card> : (
-        <div className="space-y-3">{items.map((h) => (
-          <Card key={h.id}>
-            <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink dark:text-slate-100">{h.title}</p>{h.description && <p className="text-sm text-ink-soft dark:text-slate-300 mt-1">{h.description}</p>}<p className="text-xs text-ink-muted mt-2">Due {formatDate(h.due_date)}</p></div>
-              {h.attachments?.length > 0 && <Button size="sm" variant="secondary" leftIcon={<Download className="h-3.5 w-3.5" />}>Attachments</Button>}
-            </div>
-          </Card>
-        ))}</div>
+      <PageHeader title="Homework" subtitle="Homework assigned to your child's class." icon={<BookCopy className="h-5 w-5" />} />
+      {loading ? <RowSkeleton /> : !selectedChild ? <Card><EmptyState title="No child selected" /></Card> : (
+        <>
+          <SelectedChildBanner />
+          {items.length === 0 ? <Card><EmptyState title="No homework" /></Card> : (
+            <div className="space-y-3">{items.map((h) => (
+              <Card key={h.id}>
+                <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink dark:text-slate-100">{h.title}</p>{h.description && <p className="text-sm text-ink-soft dark:text-slate-300 mt-1">{h.description}</p>}<p className="text-xs text-ink-muted mt-2">Due {formatDate(h.due_date)}</p></div>
+                  {h.attachments?.length > 0 && <Button size="sm" variant="secondary" leftIcon={<Download className="h-3.5 w-3.5" />}>Attachments</Button>}
+                </div>
+              </Card>
+            ))}</div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
 export function ParentResults() {
-  const { children, loading } = useMyChildren();
+  const { selectedChild, loading } = useParent();
   const [marks, setMarks] = useState<ExamMark[]>([]);
-  const [selected, setSelected] = useState('');
 
   useEffect(() => {
-    if (children.length === 0) return;
-    const sid = selected || children[0].id;
-    supabase.from('exam_marks').select('*').eq('student_id', sid).order('created_at', { ascending: false }).then(({ data }) => setMarks((data as ExamMark[]) ?? []));
-  }, [children, selected]);
+    if (!selectedChild) { setMarks([]); return; }
+    supabase.from('exam_marks').select('*').eq('student_id', selectedChild.id).order('created_at', { ascending: false }).then(({ data }) => setMarks((data as ExamMark[]) ?? []));
+  }, [selectedChild]);
 
   const columns: Column<ExamMark>[] = [
     { key: 'subject', header: 'Subject ID', render: (m) => <span className="text-xs">{m.subject_id.slice(0, 8)}</span> },
@@ -186,10 +220,10 @@ export function ParentResults() {
 
   return (
     <div>
-      <PageHeader title="Exam Results" subtitle="Your children's exam results." icon={<ClipboardList className="h-5 w-5" />} />
-      {loading ? <RowSkeleton /> : (
+      <PageHeader title="Exam Results" subtitle="Your child's exam results." icon={<ClipboardList className="h-5 w-5" />} />
+      {loading ? <RowSkeleton /> : !selectedChild ? <Card><EmptyState title="No child selected" /></Card> : (
         <>
-          {children.length > 1 && <Card className="mb-4"><Select label="Select child" value={selected} onChange={(e) => setSelected(e.target.value)}>{children.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}</Select></Card>}
+          <SelectedChildBanner />
           <Card><DataTable columns={columns} data={marks} rowKey={(m) => m.id} emptyTitle="No results yet" /></Card>
         </>
       )}
@@ -198,35 +232,37 @@ export function ParentResults() {
 }
 
 export function ParentReports() {
-  const { children, loading } = useMyChildren();
+  const { selectedChild, children, selectChild, loading } = useParent();
   const [reports, setReports] = useState<ReportCard[]>([]);
   const [viewing, setViewing] = useState<ReportCard | null>(null);
 
   useEffect(() => {
-    if (children.length === 0) return;
-    const ids = children.map((c) => c.id);
-    supabase.from('report_cards').select('*').in('student_id', ids).eq('published', true).order('created_at', { ascending: false }).then(({ data }) => setReports((data as ReportCard[]) ?? []));
-  }, [children]);
-
-  const childName = (id: string) => children.find((c) => c.id === id)?.full_name ?? 'Unknown';
+    if (!selectedChild) { setReports([]); return; }
+    supabase.from('report_cards').select('*').eq('student_id', selectedChild.id).eq('published', true).order('created_at', { ascending: false }).then(({ data }) => setReports((data as ReportCard[]) ?? []));
+  }, [selectedChild]);
 
   return (
     <div>
-      <PageHeader title="Report Cards" subtitle="Digital report cards for your children." icon={<FileText className="h-5 w-5" />} />
-      {loading ? <RowSkeleton /> : reports.length === 0 ? <Card><EmptyState title="No report cards" /></Card> : (
-        <div className="space-y-3">{reports.map((r) => (
-          <Card key={r.id}><div className="flex items-center justify-between gap-3">
-            <div><p className="font-semibold text-ink dark:text-slate-100">{r.title}</p><p className="text-sm text-ink-muted">{childName(r.student_id)} · {r.overall_grade ?? '—'}</p></div>
-            <Button size="sm" variant="secondary" onClick={() => setViewing(r)}>View</Button>
-          </div></Card>
-        ))}</div>
+      <PageHeader title="Report Cards" subtitle="Digital report cards for your child." icon={<FileText className="h-5 w-5" />} />
+      {loading ? <RowSkeleton /> : !selectedChild ? <Card><EmptyState title="No child selected" /></Card> : (
+        <>
+          <SelectedChildBanner />
+          {reports.length === 0 ? <Card><EmptyState title="No report cards" /></Card> : (
+            <div className="space-y-3">{reports.map((r) => (
+              <Card key={r.id}><div className="flex items-center justify-between gap-3">
+                <div><p className="font-semibold text-ink dark:text-slate-100">{r.title}</p><p className="text-sm text-ink-muted">{r.overall_grade ?? '—'}</p></div>
+                <Button size="sm" variant="secondary" onClick={() => setViewing(r)}>View</Button>
+              </div></Card>
+            ))}</div>
+          )}
+        </>
       )}
-      {viewing && (
+      {viewing && selectedChild && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" onClick={() => setViewing(null)}>
           <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-bold text-ink dark:text-slate-100">{viewing.title}</h2><Button size="sm" variant="secondary" leftIcon={<Printer className="h-3.5 w-3.5" />} onClick={() => window.print()}>Print</Button></div>
             <div className="space-y-3 text-sm">
-              <p className="text-ink-soft dark:text-slate-300">Student: {childName(viewing.student_id)}</p>
+              <p className="text-ink-soft dark:text-slate-300">Student: {selectedChild.full_name}</p>
               <p className="text-ink-soft dark:text-slate-300">Overall Grade: <span className="font-bold">{viewing.overall_grade ?? '—'}</span></p>
               <p className="text-ink-soft dark:text-slate-300">Overall Marks: {viewing.overall_marks ?? '—'}</p>
               {viewing.summary && <p className="text-ink-soft dark:text-slate-300">{viewing.summary}</p>}
@@ -241,6 +277,7 @@ export function ParentReports() {
 
 export function ParentMessages() {
   const { profile } = useAuth();
+  const { selectedChild, children, selectChild } = useParent();
   const { toast } = useToast();
   const { school } = useSchool();
   const [teachers, setTeachers] = useState<AppUser[]>([]);
@@ -254,9 +291,17 @@ export function ParentMessages() {
     supabase.from('messages').select('*').or(`sender_id.eq.${profile.user_id},recipient_id.eq.${profile.user_id}`).order('created_at', { ascending: false }).limit(20).then(({ data }) => setMessages((data as Message[]) ?? []));
   }, [profile?.school_id, profile?.user_id]);
 
-  const send = async (e: React.FormEvent) => {
+  const send = async (e: FormEvent) => {
     e.preventDefault(); setSending(true);
-    const { error } = await supabase.from('messages').insert({ school_id: profile?.school_id, sender_id: profile?.user_id, recipient_id: form.recipient_id, subject: form.subject, body: form.body });
+    const childContext = selectedChild ? ` [Re: ${selectedChild.full_name} — #${selectedChild.admission_number}]` : '';
+    const subjectWithContext = form.subject ? `${form.subject}${childContext}` : childContext.trim();
+    const { error } = await supabase.from('messages').insert({
+      school_id: profile?.school_id,
+      sender_id: profile?.user_id,
+      recipient_id: form.recipient_id,
+      subject: subjectWithContext,
+      body: form.body,
+    });
     setSending(false);
     if (error) { toast(error.message, 'error'); return; }
     toast('Message sent.', 'success'); setForm({ recipient_id: '', subject: '', body: '' });
@@ -268,10 +313,16 @@ export function ParentMessages() {
   return (
     <div>
       <PageHeader title="Messages" subtitle="Communicate with your children's teachers." icon={<MessageSquare className="h-5 w-5" />} />
+      {children.length > 1 && <SelectedChildBanner />}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card><CardHeader title="New Message" /><form onSubmit={send} className="space-y-4">
+          {selectedChild && (
+            <div className="rounded-xl bg-primary-50 dark:bg-primary-500/10 p-3 text-sm text-ink-soft dark:text-slate-300">
+              About: <span className="font-medium text-ink dark:text-slate-100">{selectedChild.full_name}</span> (#{selectedChild.admission_number})
+            </div>
+          )}
           <Select label="Teacher" required value={form.recipient_id} onChange={(e) => setForm((f) => ({ ...f, recipient_id: e.target.value }))}><option value="">Select…</option>{teachers.map((t) => <option key={t.id} value={t.user_id}>{t.full_name}</option>)}</Select>
-          <Input label="Subject" value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} />
+          <Input label="Subject" value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} placeholder={selectedChild ? `Re: ${selectedChild.full_name}` : ''} />
           <Textarea label="Message" required value={form.body} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))} />
           <Button type="submit" loading={sending} leftIcon={<Send className="h-4 w-4" />}>Send</Button>
         </form></Card>
@@ -291,17 +342,34 @@ export function ParentMessages() {
 
 export function ParentAnnouncements() {
   const { profile } = useAuth();
+  const { selectedChild, classes, loading } = useParent();
   const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadDone, setLoadDone] = useState(true);
+
   useEffect(() => {
     if (!profile?.school_id) return;
-    supabase.from('announcements').select('*').eq('school_id', profile.school_id).in('audience', ['school', 'emergency']).order('created_at', { ascending: false }).then(({ data }) => { setItems(data ?? []); setLoading(false); });
-  }, [profile?.school_id]);
+    setLoadDone(false);
+    const childClassIds = selectedChild?.class_id ? [selectedChild.class_id] : classes.map((c) => c.id);
+    supabase.from('announcements').select('*').eq('school_id', profile.school_id).in('audience', ['school', 'emergency', 'class']).order('created_at', { ascending: false }).then(({ data }) => {
+      const filtered = (data ?? []).filter((a: any) => {
+        if (a.audience === 'school' || a.audience === 'emergency') return true;
+        if (a.audience === 'class' && a.class_id) return childClassIds.includes(a.class_id);
+        return false;
+      });
+      setItems(filtered); setLoadDone(true);
+    });
+  }, [profile?.school_id, selectedChild, classes]);
+
   return (
     <div>
-      <PageHeader title="Announcements" subtitle="School-wide announcements." icon={<Megaphone className="h-5 w-5" />} />
-      {loading ? <RowSkeleton /> : items.length === 0 ? <Card><EmptyState title="No announcements" /></Card> : (
-        <div className="space-y-3">{items.map((a) => <Card key={a.id}><p className="font-semibold text-ink dark:text-slate-100">{a.title}</p><p className="text-sm text-ink-soft dark:text-slate-300 mt-1">{a.body}</p><p className="text-xs text-ink-muted mt-2">{relativeTime(a.created_at)}</p></Card>)}</div>
+      <PageHeader title="Announcements" subtitle="School-wide and class announcements." icon={<Megaphone className="h-5 w-5" />} />
+      {loading ? <RowSkeleton /> : !selectedChild ? <Card><EmptyState title="No child selected" /></Card> : (
+        <>
+          <SelectedChildBanner />
+          {!loadDone ? <RowSkeleton /> : items.length === 0 ? <Card><EmptyState title="No announcements" /></Card> : (
+            <div className="space-y-3">{items.map((a) => <Card key={a.id}><p className="font-semibold text-ink dark:text-slate-100">{a.title}</p><p className="text-sm text-ink-soft dark:text-slate-300 mt-1">{a.body}</p><p className="text-xs text-ink-muted mt-2">{relativeTime(a.created_at)}</p></Card>)}</div>
+          )}
+        </>
       )}
     </div>
   );
@@ -309,17 +377,33 @@ export function ParentAnnouncements() {
 
 export function ParentCalendar() {
   const { profile } = useAuth();
+  const { selectedChild, classes, loading } = useParent();
   const [events, setEvents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadDone, setLoadDone] = useState(true);
+
   useEffect(() => {
     if (!profile?.school_id) return;
-    supabase.from('calendar_events').select('*').eq('school_id', profile.school_id).order('start_at', { ascending: true }).then(({ data }) => { setEvents(data ?? []); setLoading(false); });
-  }, [profile?.school_id]);
+    setLoadDone(false);
+    const childClassIds = selectedChild?.class_id ? [selectedChild.class_id] : classes.map((c) => c.id);
+    supabase.from('calendar_events').select('*').eq('school_id', profile.school_id).order('start_at', { ascending: true }).then(({ data }) => {
+      const filtered = (data ?? []).filter((e: any) => {
+        if (!e.class_id) return true;
+        return childClassIds.includes(e.class_id);
+      });
+      setEvents(filtered); setLoadDone(true);
+    });
+  }, [profile?.school_id, selectedChild, classes]);
+
   return (
     <div>
-      <PageHeader title="Calendar" subtitle="Upcoming school events." icon={<CalendarDays className="h-5 w-5" />} />
-      {loading ? <RowSkeleton /> : events.length === 0 ? <Card><EmptyState title="No events" /></Card> : (
-        <Card><div className="divide-y divide-slate-100 dark:divide-slate-800">{events.map((e) => <div key={e.id} className="py-3"><p className="font-medium text-ink dark:text-slate-100">{e.title}</p><p className="text-xs text-ink-muted">{formatDate(e.start_at)}</p></div>)}</div></Card>
+      <PageHeader title="Calendar" subtitle="Upcoming events for your child." icon={<CalendarDays className="h-5 w-5" />} />
+      {loading ? <RowSkeleton /> : !selectedChild ? <Card><EmptyState title="No child selected" /></Card> : (
+        <>
+          <SelectedChildBanner />
+          {!loadDone ? <RowSkeleton /> : events.length === 0 ? <Card><EmptyState title="No events" /></Card> : (
+            <Card><div className="divide-y divide-slate-100 dark:divide-slate-800">{events.map((e) => <div key={e.id} className="py-3"><p className="font-medium text-ink dark:text-slate-100">{e.title}</p><p className="text-xs text-ink-muted">{formatDate(e.start_at)}</p></div>)}</div></Card>
+          )}
+        </>
       )}
     </div>
   );
@@ -327,19 +411,33 @@ export function ParentCalendar() {
 
 export function ParentNotifications() {
   const { profile } = useAuth();
+  const { selectedChild, children, loading } = useParent();
   const [items, setItems] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     if (!profile?.user_id) return;
-    supabase.from('notifications').select('*').eq('user_id', profile.user_id).order('created_at', { ascending: false }).then(({ data }) => { setItems((data as Notification[]) ?? []); setLoading(false); });
+    supabase.from('notifications').select('*').eq('user_id', profile.user_id).order('created_at', { ascending: false }).then(({ data }) => setItems((data as Notification[]) ?? []));
   }, [profile?.user_id]);
+
+  const childName = (id: string | null) => children.find((c) => c.id === id)?.full_name;
+
   return (
     <div>
       <PageHeader title="Notifications" subtitle="Your recent notifications." icon={<BellRing className="h-5 w-5" />} />
-      {loading ? <RowSkeleton /> : items.length === 0 ? <Card><EmptyState title="No notifications" /></Card> : (
-        <Card><div className="divide-y divide-slate-100 dark:divide-slate-800">{items.map((n) => (
-          <div key={n.id} className="py-3"><p className="text-sm font-medium text-ink dark:text-slate-100">{n.title}</p>{n.body && <p className="text-xs text-ink-muted">{n.body}</p>}<p className="text-xs text-ink-muted mt-0.5">{relativeTime(n.created_at)}</p></div>
-        ))}</div></Card>
+      {loading ? <RowSkeleton /> : (
+        <>
+          {children.length > 1 && <SelectedChildBanner />}
+          {items.length === 0 ? <Card><EmptyState title="No notifications" /></Card> : (
+            <Card><div className="divide-y divide-slate-100 dark:divide-slate-800">{items.map((n) => (
+              <div key={n.id} className="py-3">
+                <p className="text-sm font-medium text-ink dark:text-slate-100">{n.title}</p>
+                {n.body && <p className="text-xs text-ink-muted">{n.body}</p>}
+                {childName((n as any).student_id) && <p className="text-xs text-primary-600 mt-0.5">Re: {childName((n as any).student_id)}</p>}
+                <p className="text-xs text-ink-muted mt-0.5">{relativeTime(n.created_at)}</p>
+              </div>
+            ))}</div></Card>
+          )}
+        </>
       )}
     </div>
   );

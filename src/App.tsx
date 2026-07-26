@@ -10,6 +10,10 @@ import { schoolAdminNav } from '@/nav/schoolAdminNav';
 import { teacherNav } from '@/nav/teacherNav';
 import { parentNav } from '@/nav/parentNav';
 import { useSchool } from '@/hooks/useSchool';
+import { Avatar } from '@/components/ui/Avatar';
+import { cn } from '@/lib/utils';
+import { Check, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
 
 // Auth pages
 import { LoginPage } from '@/pages/auth/LoginPage';
@@ -34,6 +38,7 @@ import { TeacherDashboard, TeacherClasses, TeacherStudents, TeacherAttendance, T
 
 // Parent pages
 import { ParentDashboard, ParentChildren, ParentAttendance, ParentHomework, ParentResults, ParentReports, ParentMessages, ParentAnnouncements, ParentCalendar, ParentNotifications, ParentProfile } from '@/pages/parent/ParentPages';
+import { ParentProvider, useParent } from '@/context/ParentContext';
 
 function RoleRedirect() {
   const { session, profile, loading } = useAuth();
@@ -53,7 +58,48 @@ function TeacherLayout() {
 }
 function ParentLayout() {
   const { school } = useSchool();
-  return <DashboardLayout navItems={parentNav} schoolName={school?.name} schoolLogo={school?.logo_url} />;
+  return (
+    <ParentProvider>
+      <DashboardLayout navItems={parentNav} schoolName={school?.name} schoolLogo={school?.logo_url} headerSlot={<ChildSwitcher />} />
+    </ParentProvider>
+  );
+}
+
+function ChildSwitcher() {
+  const { children, selectedChild, selectChild, loading } = useParent();
+  const [open, setOpen] = useState(false);
+  if (loading || children.length <= 1) return null;
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-sm font-medium text-ink dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+      >
+        <Avatar name={selectedChild?.full_name ?? ''} src={selectedChild?.photo_url} size="sm" />
+        <span className="hidden sm:block max-w-[120px] truncate">{selectedChild?.full_name ?? 'Select child'}</span>
+        <ChevronDown className="h-4 w-4 text-ink-muted" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-card-hover z-20 animate-scale-in origin-top-right">
+            <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Switch child</p>
+            {children.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => { selectChild(c.id); setOpen(false); }}
+                className={cn('flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors', c.id === selectedChild?.id && 'bg-primary-50 dark:bg-primary-500/10')}
+              >
+                <Avatar name={c.full_name} src={c.photo_url} size="sm" />
+                <span className="truncate text-ink dark:text-slate-100">{c.full_name}</span>
+                {c.id === selectedChild?.id && <Check className="h-4 w-4 text-primary-600 ml-auto" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function App() {

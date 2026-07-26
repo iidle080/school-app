@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { GraduationCap, Plus, Pencil, X, Phone, AlertCircle, UserPlus } from 'lucide-react';
+import { GraduationCap, Plus, Pencil, X, Phone, AlertCircle, UserPlus, Check, Search } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
@@ -13,7 +13,7 @@ import { Badge, statusBadge } from '@/components/ui/Badge';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Avatar } from '@/components/ui/Avatar';
 import { RowSkeleton } from '@/components/ui/Spinner';
-import type { Student, AppUser, ClassRow } from '@/types';
+import type { Student, AppUser, ClassRow, Relationship } from '@/types';
 
 export function SchoolAdminStudents() {
   const { profile } = useAuth();
@@ -190,20 +190,31 @@ function StudentDetailModal({ student, classes, parents, schoolId, onClose, onCh
   student: Student | null; classes: ClassRow[]; parents: AppUser[]; schoolId: string;
   onClose: () => void; onChanged: () => void; toast: (m: string, t?: 'success' | 'error' | 'warning' | 'info') => void;
 }) {
-  const [linked, setLinked] = useState<Array<{ id: string; full_name: string; relationship: string }>>([]);
+  const [linked, setLinked] = useState<Array<{ id: string; parent_user_id: string; full_name: string; relationship: string; is_primary_guardian: boolean }>>([]);
   const [addParent, setAddParent] = useState(false);
   const [selectedParent, setSelectedParent] = useState('');
 
-  useEffect(() => {
+  const relationshipOptions = [
+    { value: 'father', label: 'Father' },
+    { value: 'mother', label: 'Mother' },
+    { value: 'guardian', label: 'Guardian' },
+    { value: 'aunt', label: 'Aunt' },
+    { value: 'uncle', label: 'Uncle' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  const loadLinked = () => {
     if (!student) return;
-    supabase.from('student_parents').select('id, relationship, parent_user_id').eq('student_id', student.id).then(({ data }) => {
-      const rows = (data ?? []).map((r: { id: string; relationship: string; parent_user_id: string }) => {
+    supabase.from('student_parents').select('id, relationship, parent_user_id, is_primary_guardian').eq('student_id', student.id).then(({ data }) => {
+      const rows = (data ?? []).map((r: { id: string; relationship: string; parent_user_id: string; is_primary_guardian: boolean }) => {
         const p = parents.find((pp) => pp.user_id === r.parent_user_id);
-        return { id: r.id, full_name: p?.full_name ?? 'Unknown', relationship: r.relationship };
+        return { id: r.id, parent_user_id: r.parent_user_id, full_name: p?.full_name ?? 'Unknown', relationship: r.relationship, is_primary_guardian: r.is_primary_guardian };
       });
       setLinked(rows);
     });
-  }, [student, parents]);
+  };
+
+  useEffect(() => { loadLinked(); }, [student, parents]);
 
   if (!student) return null;
 
@@ -213,26 +224,32 @@ function StudentDetailModal({ student, classes, parents, schoolId, onClose, onCh
     if (!p) return;
     const { error } = await supabase.from('student_parents').insert({
       school_id: schoolId, student_id: student.id, parent_user_id: p.user_id, relationship: 'guardian',
+      is_primary_guardian: linked.length === 0,
     });
     if (error) { toast(error.message, 'error'); return; }
     toast('Parent linked.', 'success');
-    setAddParent(false);
-    setSelectedParent('');
-    supabase.from('student_parents').select('id, relationship, parent_user_id').eq('student_id', student.id).then(({ data }) => {
-      const rows = (data ?? []).map((r: { id: string; relationship: string; parent_user_id: string }) => {
-        const pp = parents.find((x) => x.user_id === r.parent_user_id);
-        return { id: r.id, full_name: pp?.full_name ?? 'Unknown', relationship: r.relationship };
-      });
-      setLinked(rows);
-    });
-    onChanged();
+    setAddParent(false); setSelectedParent('');
+    loadLinked(); onChanged();
   };
 
   const unlink = async (id: string) => {
     await supabase.from('student_parents').delete().eq('id', id);
     setLinked((prev) => prev.filter((l) => l.id !== id));
-    toast('Parent unlinked.', 'success');
+    toast('Parent unlinked.', 'success'); onChanged();
+  };
+
+  const updateRelationship = async (id: string, relationship: string) => {
+    await supabase.from('student_parents').update({ relationship }).eq('id', id);
+    setLinked((prev) => prev.map((l) => l.id === id ? { ...l, relationship } : l));
     onChanged();
+  };
+
+  const setPrimary = async (id: string) => {
+    const others = linked.filter((l) => l.id !== id);
+    await Promise.all(others.map((l) => supabase.from('student_parents').update({ is_primary_guardian: false }).eq('id', l.id)));
+    await supabase.from('student_parents').update({ is_primary_guardian: true }).eq('id', id);
+    setLinked((prev) => prev.map((l) => ({ ...l, is_primary_guardian: l.id === id })));
+    toast('Primary guardian set.', 'success'); onChanged();
   };
 
   return (
@@ -269,12 +286,22 @@ function StudentDetailModal({ student, classes, parents, schoolId, onClose, onCh
           )}
           <div className="space-y-2">
             {linked.map((l) => (
-              <div key={l.id} className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3">
-                <div>
-                  <p className="text-sm font-medium text-ink dark:text-slate-100">{l.full_name}</p>
-                  <p className="text-xs text-ink-muted capitalize">{l.relationship}</p>
+              <div key={l.id} className="rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-ink dark:text-slate-100">{l.full_name}</p>
+                    {l.is_primary_guardian && <Badge variant="primary">Primary</Badge>}
+                  </div>
+                  <button onClick={() => unlink(l.id)} className="text-ink-muted hover:text-error"><X className="h-4 w-4" /></button>
                 </div>
-                <button onClick={() => unlink(l.id)} className="text-ink-muted hover:text-error"><X className="h-4 w-4" /></button>
+                <div className="flex items-center gap-2">
+                  <Select value={l.relationship} onChange={(e) => updateRelationship(l.id, e.target.value)} className="text-xs py-1">
+                    {relationshipOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </Select>
+                  {!l.is_primary_guardian && (
+                    <Button size="sm" variant="ghost" onClick={() => setPrimary(l.id)}>Set as primary</Button>
+                  )}
+                </div>
               </div>
             ))}
             {linked.length === 0 && <p className="text-sm text-ink-muted py-2">No parents linked yet.</p>}

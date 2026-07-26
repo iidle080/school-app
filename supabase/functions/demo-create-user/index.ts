@@ -7,6 +7,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+interface StudentLink {
+  student_id: string;
+  relationship: string;
+  is_primary_guardian: boolean;
+}
+
 interface DemoCreateBody {
   email: string;
   password: string;
@@ -14,6 +20,7 @@ interface DemoCreateBody {
   role: "school_admin" | "teacher" | "parent";
   school_id: string;
   student_id?: string | null;
+  student_links?: StudentLink[] | null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -48,7 +55,7 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Invalid JSON body." }, 400);
   }
 
-  const { email, password, full_name, role, school_id, student_id } = body;
+  const { email, password, full_name, role, school_id, student_id, student_links } = body;
   if (!email || !password || !full_name || !role || !school_id) {
     return json({ error: "Missing required fields." }, 400);
   }
@@ -124,14 +131,24 @@ Deno.serve(async (req: Request) => {
     return json({ error: profileErr.message }, 400);
   }
 
-  // For parents, optionally link to a student.
-  if (role === "parent" && student_id) {
-    await admin.from("student_parents").insert({
-      school_id,
-      student_id,
-      parent_user_id: newUserId,
-      relationship: "guardian",
-    });
+  // For parents, link to one or more students.
+  if (role === "parent") {
+    const links: StudentLink[] = [];
+    if (student_links && Array.isArray(student_links) && student_links.length > 0) {
+      links.push(...student_links);
+    } else if (student_id) {
+      links.push({ student_id, relationship: "guardian", is_primary_guardian: true });
+    }
+    if (links.length > 0) {
+      const rows = links.map((l) => ({
+        school_id,
+        student_id: l.student_id,
+        parent_user_id: newUserId,
+        relationship: l.relationship || "guardian",
+        is_primary_guardian: !!l.is_primary_guardian,
+      }));
+      await admin.from("student_parents").insert(rows);
+    }
   }
 
   return json({ user_id: newUserId, email, role }, 200);

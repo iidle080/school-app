@@ -19,9 +19,10 @@ interface DashboardLayoutProps {
   navItems: NavItem[];
   schoolName?: string | null;
   schoolLogo?: string | null;
+  headerSlot?: ReactNode;
 }
 
-export function DashboardLayout({ navItems, schoolName, schoolLogo }: DashboardLayoutProps) {
+export function DashboardLayout({ navItems, schoolName, schoolLogo, headerSlot }: DashboardLayoutProps) {
   const { profile, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
@@ -74,6 +75,8 @@ export function DashboardLayout({ navItems, schoolName, schoolLogo }: DashboardL
             </h2>
             {DEMO_MODE && <DemoModeBadge />}
           </div>
+
+          {headerSlot}
 
           <button
             onClick={toggleTheme}

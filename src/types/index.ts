@@ -276,6 +276,19 @@ export interface Notification {
   created_at: string;
 }
 
+export type Relationship = 'father' | 'mother' | 'guardian' | 'aunt' | 'uncle' | 'other';
+
+export interface StudentParent {
+  id: string;
+  school_id: string;
+  student_id: string;
+  parent_user_id: string;
+  relationship: Relationship;
+  is_primary_guardian: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AuditLog {
   id: string;
   school_id: string | null;

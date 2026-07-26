@@ -35,6 +35,7 @@ export async function createDemoUser(params: {
   schoolId: string;
   email: string;
   studentId?: string;
+  studentLinks?: Array<{ student_id: string; relationship: string; is_primary_guardian: boolean }>;
 }): Promise<{ error: string | null }> {
   const { data, error } = await supabase.functions.invoke('demo-create-user', {
     body: {
@@ -44,6 +45,7 @@ export async function createDemoUser(params: {
       role: params.role,
       school_id: params.schoolId,
       student_id: params.studentId ?? null,
+      student_links: params.studentLinks ?? null,
     },
   });
   if (error) return { error: error.message };
