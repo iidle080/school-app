@@ -34,11 +34,11 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.replace("Bearer ", "");
 
-  // Require a valid caller JWT so the function isn't open to the world.
-  // We accept either the forwarded caller token or the anon key header.
-  const callerToken = token || anonKey || "";
-  if (!callerToken) {
+  if (!token) {
     return json({ error: "Unauthorized." }, 401);
+  }
+  if (!anonKey) {
+    return json({ error: "Server not configured." }, 500);
   }
 
   let body: DemoCreateBody;
@@ -56,10 +56,11 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Invalid role for demo creation." }, 400);
   }
 
-  // Verify caller is authenticated and allowed to create a demo user
-  // (school_admin can create teacher/parent within their school; super_admin can create school_admin).
-  const callerClient = createClient(supabaseUrl, callerToken, {
+  // Verify caller is authenticated. The anon key is the API key; the user JWT
+  // goes in the Authorization header so getUser() validates it against GoTrue.
+  const callerClient = createClient(supabaseUrl, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: callerData, error: callerErr } = await callerClient.auth.getUser();
   if (callerErr || !callerData?.user) {
