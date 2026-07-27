@@ -157,6 +157,7 @@ export interface Attendance {
   student_id: string;
   class_id: string | null;
   date: string;
+  session: 'morning' | 'afternoon';
   status: AttendanceStatus;
   notes: string | null;
   marked_by: string | null;
@@ -181,10 +182,21 @@ export interface Exam {
   id: string;
   school_id: string;
   term_id: string | null;
+  exam_session_id: string | null;
   name: string;
   exam_type: string;
   start_date: string | null;
   end_date: string | null;
+  status: 'draft' | 'scheduled' | 'completed' | 'published';
+  class_id: string | null;
+  subject_id: string | null;
+  exam_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  duration_minutes: number | null;
+  room: string | null;
+  teacher_id: string | null;
+  total_marks: number;
   created_at: string;
 }
 
@@ -261,6 +273,11 @@ export interface Message {
   attachments: Array<{ name: string; url: string }>;
   read_at: string | null;
   parent_message_id: string | null;
+  conversation_id: string | null;
+  message_type: 'text' | 'image' | 'document' | 'system';
+  attachment_url: string | null;
+  attachment_name: string | null;
+  is_typing: string | null;
   created_at: string;
 }
 
@@ -287,6 +304,31 @@ export interface StudentParent {
   is_primary_guardian: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ExamSession {
+  id: string;
+  school_id: string;
+  academic_year_id: string | null;
+  term_id: string | null;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  status: 'draft' | 'scheduled' | 'completed' | 'published';
+  published: boolean;
+  published_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClassSubject {
+  id: string;
+  school_id: string;
+  class_id: string;
+  subject_id: string;
+  teacher_id: string | null;
+  created_at: string;
 }
 
 export interface AuditLog {

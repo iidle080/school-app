@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import type { Student, ClassRow, Subject, AppUser } from '@/types';
+import type { Student, ClassRow, Subject, AppUser, ClassSubject, ExamSession } from '@/types';
 
 interface SchoolData {
   students: Student[];
@@ -9,6 +9,8 @@ interface SchoolData {
   parents: AppUser[];
   classes: ClassRow[];
   subjects: Subject[];
+  classSubjects: ClassSubject[];
+  examSessions: ExamSession[];
   loading: boolean;
   refresh: () => void;
 }
@@ -20,6 +22,8 @@ export function useSchoolData(): SchoolData {
   const [parents, setParents] = useState<AppUser[]>([]);
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [classSubjects, setClassSubjects] = useState<ClassSubject[]>([]);
+  const [examSessions, setExamSessions] = useState<ExamSession[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = () => {
@@ -35,17 +39,21 @@ export function useSchoolData(): SchoolData {
       supabase.from('app_users').select('*').eq('school_id', sid).eq('role', 'parent').order('full_name'),
       supabase.from('classes').select('*').eq('school_id', sid).order('name'),
       supabase.from('subjects').select('*').eq('school_id', sid).order('name'),
-    ]).then(([s, t, p, c, sub]) => {
+      supabase.from('class_subjects').select('*').eq('school_id', sid),
+      supabase.from('exam_sessions').select('*').eq('school_id', sid).order('created_at', { ascending: false }),
+    ]).then(([s, t, p, c, sub, cs, es]) => {
       setStudents((s.data as Student[]) ?? []);
       setTeachers((t.data as AppUser[]) ?? []);
       setParents((p.data as AppUser[]) ?? []);
       setClasses((c.data as ClassRow[]) ?? []);
       setSubjects((sub.data as Subject[]) ?? []);
+      setClassSubjects((cs.data as ClassSubject[]) ?? []);
+      setExamSessions((es.data as ExamSession[]) ?? []);
       setLoading(false);
     });
   };
 
   useEffect(load, [profile?.school_id]);
 
-  return { students, teachers, parents, classes, subjects, loading, refresh: load };
+  return { students, teachers, parents, classes, subjects, classSubjects, examSessions, loading, refresh: load };
 }

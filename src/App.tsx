@@ -39,6 +39,7 @@ import { TeacherDashboard, TeacherClasses, TeacherStudents, TeacherAttendance, T
 // Parent pages
 import { ParentDashboard, ParentChildren, ParentAttendance, ParentHomework, ParentResults, ParentReports, ParentMessages, ParentAnnouncements, ParentCalendar, ParentNotifications, ParentProfile } from '@/pages/parent/ParentPages';
 import { ParentProvider, useParent } from '@/context/ParentContext';
+import { AcademicProvider } from '@/context/AcademicContext';
 
 function RoleRedirect() {
   const { session, profile, loading } = useAuth();
@@ -107,6 +108,7 @@ export default function App() {
     <ThemeProvider>
       <ToastProvider>
         <AuthProvider>
+          <AcademicProvider>
           <BrowserRouter>
             <Routes>
               {/* Public */}
@@ -186,6 +188,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </BrowserRouter>
+          </AcademicProvider>
         </AuthProvider>
       </ToastProvider>
     </ThemeProvider>

@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useRef, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, BellRing, User, Send, Download, Printer, ChevronRight } from 'lucide-react';
+import { GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, BellRing, User, Send, Download, Printer, ChevronRight, Check, X, Search, Smile, Paperclip, CheckCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useParent } from '@/context/ParentContext';
@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { StatCard } from '@/components/ui/StatCard';
 import { RowSkeleton, CardSkeleton } from '@/components/ui/Spinner';
 import { DataTable, type Column } from '@/components/ui/DataTable';
-import { formatDate, relativeTime, percentage, gradeFromPercentage } from '@/lib/utils';
+import { formatDate, relativeTime, percentage, gradeFromPercentage, cn } from '@/lib/utils';
 import { ATTENDANCE_LABELS } from '@/lib/constants';
 import type { Student, Attendance, Homework, ExamMark, ReportCard, Message, Notification, AppUser, ClassRow } from '@/types';
 
@@ -149,22 +149,58 @@ export function ParentAttendance() {
 
   useEffect(() => {
     if (!selectedChild) { setRecords([]); return; }
-    supabase.from('attendance').select('*').eq('student_id', selectedChild.id).order('date', { ascending: false }).limit(30).then(({ data }) => setRecords((data as Attendance[]) ?? []));
+    supabase.from('attendance').select('*').eq('student_id', selectedChild.id).order('date', { ascending: false }).limit(60).then(({ data }) => setRecords((data as Attendance[]) ?? []));
   }, [selectedChild]);
 
-  const columns: Column<Attendance>[] = [
-    { key: 'date', header: 'Date', render: (a) => formatDate(a.date) },
-    { key: 'status', header: 'Status', render: (a) => { const b = statusBadge(a.status); return <Badge variant={b.variant}>{b.label}</Badge>; } },
-    { key: 'notes', header: 'Notes', render: (a) => a.notes ?? '—' },
-  ];
+  // Group by date, showing morning + afternoon side by side
+  const byDate = new Map<string, { morning?: Attendance; afternoon?: Attendance }>();
+  records.forEach((r) => {
+    const entry = byDate.get(r.date) ?? {};
+    if (r.session === 'morning') entry.morning = r; else entry.afternoon = r;
+    byDate.set(r.date, entry);
+  });
+  const dates = Array.from(byDate.keys()).sort((a, b) => b.localeCompare(a));
+
+  const present = records.filter((r) => r.status === 'present').length;
+  const absent = records.filter((r) => r.status === 'absent').length;
+  const late = records.filter((r) => r.status === 'late').length;
+  const morningRecords = records.filter((r) => r.session === 'morning');
+  const afternoonRecords = records.filter((r) => r.session === 'afternoon');
+  const morningPct = morningRecords.length ? Math.round((morningRecords.filter((r) => r.status === 'present').length / morningRecords.length) * 100) : 0;
+  const afternoonPct = afternoonRecords.length ? Math.round((afternoonRecords.filter((r) => r.status === 'present').length / afternoonRecords.length) * 100) : 0;
 
   return (
     <div>
-      <PageHeader title="Attendance" subtitle="Your child's attendance records." icon={<CalendarCheck className="h-5 w-5" />} />
+      <PageHeader title="Attendance" subtitle="Your child's morning and afternoon attendance." icon={<CalendarCheck className="h-5 w-5" />} />
       {loading ? <RowSkeleton /> : !selectedChild ? <Card><EmptyState title="No child selected" description="Select a child from the switcher above." /></Card> : (
         <>
           <SelectedChildBanner />
-          <Card><DataTable columns={columns} data={records} rowKey={(a) => a.id} emptyTitle="No attendance records" /></Card>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-4">
+            <StatCard label="Morning %" value={`${morningPct}%`} icon={<CalendarCheck className="h-5 w-5" />} />
+            <StatCard label="Afternoon %" value={`${afternoonPct}%`} icon={<CalendarCheck className="h-5 w-5" />} accent="bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400" />
+            <StatCard label="Total Present" value={present} icon={<Check className="h-5 w-5" />} accent="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400" />
+            <StatCard label="Total Absent" value={absent} icon={<X className="h-5 w-5" />} accent="bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400" />
+          </div>
+          {dates.length === 0 ? <Card><EmptyState title="No attendance records" /></Card> : (
+            <Card>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-ink-muted border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-2 pr-4">Date</th><th className="py-2 pr-4">Morning</th><th className="py-2 pr-4">Afternoon</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {dates.map((d) => { const e = byDate.get(d)!; const mb = e.morning ? statusBadge(e.morning.status) : null; const ab = e.afternoon ? statusBadge(e.afternoon.status) : null; return (
+                      <tr key={d}>
+                        <td className="py-2 pr-4 text-ink dark:text-slate-100">{formatDate(d)}</td>
+                        <td className="py-2 pr-4">{mb ? <Badge variant={mb.variant}>{mb.label}</Badge> : <span className="text-ink-muted">—</span>}</td>
+                        <td className="py-2 pr-4">{ab ? <Badge variant={ab.variant}>{ab.label}</Badge> : <span className="text-ink-muted">—</span>}</td>
+                      </tr>
+                    ); })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
         </>
       )}
     </div>
@@ -277,64 +313,156 @@ export function ParentReports() {
 
 export function ParentMessages() {
   const { profile } = useAuth();
-  const { selectedChild, children, selectChild } = useParent();
+  const { selectedChild, children, classes, selectChild } = useParent();
   const { toast } = useToast();
   const { school } = useSchool();
+  const [tab, setTab] = useState<'teachers' | 'admin'>('teachers');
   const [teachers, setTeachers] = useState<AppUser[]>([]);
-  const [form, setForm] = useState({ recipient_id: '', subject: '', body: '' });
-  const [sending, setSending] = useState(false);
+  const [admins, setAdmins] = useState<AppUser[]>([]);
+  const [activeChat, setActiveChat] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
+  const [lastMsgMap, setLastMsgMap] = useState<Record<string, Message>>({});
+  const [showEmoji, setShowEmoji] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Load teachers who teach the parent's children + school admins
   useEffect(() => {
     if (!profile?.school_id) return;
-    supabase.from('app_users').select('*').eq('school_id', profile.school_id).eq('role', 'teacher').then(({ data }) => setTeachers((data as AppUser[]) ?? []));
-    supabase.from('messages').select('*').or(`sender_id.eq.${profile.user_id},recipient_id.eq.${profile.user_id}`).order('created_at', { ascending: false }).limit(20).then(({ data }) => setMessages((data as Message[]) ?? []));
-  }, [profile?.school_id, profile?.user_id]);
+    const childClassIds = children.map((c) => c.class_id).filter(Boolean) as string[];
+    if (childClassIds.length) {
+      supabase.from('class_subjects').select('teacher_id').in('class_id', childClassIds).then(({ data }) => {
+        const teacherIds = Array.from(new Set((data ?? []).map((r: { teacher_id: string }) => r.teacher_id).filter(Boolean)));
+        if (teacherIds.length) supabase.from('app_users').select('*').in('id', teacherIds).eq('school_id', profile.school_id).then(({ data }) => setTeachers((data as AppUser[]) ?? []));
+      });
+    }
+    supabase.from('app_users').select('*').eq('school_id', profile.school_id).eq('role', 'school_admin').then(({ data }) => setAdmins((data as AppUser[]) ?? []));
+  }, [profile?.school_id, children]);
+
+  const contactList = tab === 'teachers' ? teachers : admins;
+  const filteredContacts = search.trim() ? contactList.filter((c) => c.full_name.toLowerCase().includes(search.toLowerCase())) : contactList;
+
+  const conversationId = (a: string, b: string) => [a, b].sort().join('|');
+
+  useEffect(() => {
+    if (!activeChat || !profile?.user_id) return;
+    const cid = conversationId(profile.user_id, activeChat);
+    supabase.from('messages').select('*').eq('conversation_id', cid).order('created_at', { ascending: true }).then(({ data }) => {
+      setMessages((data as Message[]) ?? []);
+      const unread = (data ?? []).filter((m: Message) => m.recipient_id === profile.user_id && !m.read_at);
+      if (unread.length) {
+        supabase.from('messages').update({ read_at: new Date().toISOString() }).in('id', unread.map((m: Message) => m.id)).then(() => {
+          setMessages((prev) => prev.map((m) => m.recipient_id === profile.user_id ? { ...m, read_at: m.read_at ?? new Date().toISOString() } : m));
+        });
+      }
+    });
+  }, [activeChat, profile?.user_id]);
+
+  useEffect(() => {
+    if (!profile?.user_id || contactList.length === 0) return;
+    (async () => {
+      const uMap: Record<string, number> = {};
+      const lMap: Record<string, Message> = {};
+      for (const c of contactList) {
+        const cid = conversationId(profile.user_id, c.user_id);
+        const { data } = await supabase.from('messages').select('*').eq('conversation_id', cid).order('created_at', { ascending: false });
+        const msgs = (data as Message[]) ?? [];
+        uMap[c.user_id] = msgs.filter((m) => m.recipient_id === profile.user_id && !m.read_at).length;
+        if (msgs[0]) lMap[c.user_id] = msgs[0];
+      }
+      setUnreadMap(uMap); setLastMsgMap(lMap);
+    })();
+  }, [profile?.user_id, contactList.length, tab]);
+
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   const send = async (e: FormEvent) => {
-    e.preventDefault(); setSending(true);
-    const childContext = selectedChild ? ` [Re: ${selectedChild.full_name} — #${selectedChild.admission_number}]` : '';
-    const subjectWithContext = form.subject ? `${form.subject}${childContext}` : childContext.trim();
-    const { error } = await supabase.from('messages').insert({
-      school_id: profile?.school_id,
-      sender_id: profile?.user_id,
-      recipient_id: form.recipient_id,
-      subject: subjectWithContext,
-      body: form.body,
-    });
-    setSending(false);
+    e.preventDefault();
+    if (!input.trim() || !activeChat || !profile?.user_id) return;
+    const cid = conversationId(profile.user_id, activeChat);
+    const childContext = selectedChild ? ` [Re: ${selectedChild.full_name}]` : '';
+    const { data, error } = await supabase.from('messages').insert({
+      school_id: profile.school_id, sender_id: profile.user_id, recipient_id: activeChat,
+      body: input + childContext, conversation_id: cid, message_type: 'text',
+    }).select().single();
     if (error) { toast(error.message, 'error'); return; }
-    toast('Message sent.', 'success'); setForm({ recipient_id: '', subject: '', body: '' });
-    const uid = profile?.user_id;
-    if (!uid) return;
-    supabase.from('messages').select('*').or(`sender_id.eq.${uid},recipient_id.eq.${uid}`).order('created_at', { ascending: false }).limit(20).then(({ data }) => setMessages((data as Message[]) ?? []));
+    setMessages((prev) => [...prev, data as Message]);
+    setInput(''); setShowEmoji(false);
   };
+
+  const activeContact = contactList.find((c) => c.user_id === activeChat);
 
   return (
     <div>
-      <PageHeader title="Messages" subtitle="Communicate with your children's teachers." icon={<MessageSquare className="h-5 w-5" />} />
+      <PageHeader title="Messages" subtitle="Chat with your children's teachers." icon={<MessageSquare className="h-5 w-5" />} />
       {children.length > 1 && <SelectedChildBanner />}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card><CardHeader title="New Message" /><form onSubmit={send} className="space-y-4">
-          {selectedChild && (
-            <div className="rounded-xl bg-primary-50 dark:bg-primary-500/10 p-3 text-sm text-ink-soft dark:text-slate-300">
-              About: <span className="font-medium text-ink dark:text-slate-100">{selectedChild.full_name}</span> (#{selectedChild.admission_number})
-            </div>
+      <div className="grid gap-4 lg:grid-cols-[320px_1fr] h-[calc(100vh-220px)]">
+        <Card className="flex flex-col overflow-hidden">
+          <div className="flex gap-2 p-3 border-b border-slate-100 dark:border-slate-800">
+            <button onClick={() => { setTab('teachers'); setActiveChat(''); }} className={cn('flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors', tab === 'teachers' ? 'bg-primary text-white' : 'bg-slate-100 text-ink-soft dark:bg-slate-800 dark:text-slate-300')}>Teachers</button>
+            <button onClick={() => { setTab('admin'); setActiveChat(''); }} className={cn('flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors', tab === 'admin' ? 'bg-primary text-white' : 'bg-slate-100 text-ink-soft dark:bg-slate-800 dark:text-slate-300')}>Admin</button>
+          </div>
+          <div className="p-3 border-b border-slate-100 dark:border-slate-800"><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" leftIcon={<Search className="h-4 w-4" />} /></div>
+          <div className="flex-1 overflow-y-auto">
+            {filteredContacts.length === 0 ? <div className="p-4"><EmptyState title="No contacts" /></div> : filteredContacts.map((c) => {
+              const last = lastMsgMap[c.user_id];
+              const unread = unreadMap[c.user_id] ?? 0;
+              return (
+                <button key={c.user_id} onClick={() => setActiveChat(c.user_id)} className={cn('flex w-full items-center gap-3 p-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-50 dark:border-slate-800/50', activeChat === c.user_id && 'bg-primary-50 dark:bg-primary-500/10')}>
+                  <Avatar name={c.full_name} src={c.avatar_url} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-ink dark:text-slate-100 truncate">{c.full_name}</p>
+                    {last && <p className="text-xs text-ink-muted truncate">{last.sender_id === profile?.user_id ? 'You: ' : ''}{last.body}</p>}
+                  </div>
+                  {unread > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary text-white text-xs px-1.5">{unread}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+        <Card className="flex flex-col overflow-hidden">
+          {!activeChat ? <div className="flex-1 flex items-center justify-center"><EmptyState title="Select a conversation" icon={<MessageSquare className="h-8 w-8" />} /></div> : (
+            <>
+              <div className="flex items-center gap-3 p-3 border-b border-slate-100 dark:border-slate-800">
+                <Avatar name={activeContact?.full_name ?? ''} src={activeContact?.avatar_url} size="sm" />
+                <p className="font-medium text-ink dark:text-slate-100">{activeContact?.full_name}</p>
+                {selectedChild && <Badge variant="primary">Re: {selectedChild.full_name}</Badge>}
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {messages.map((m) => {
+                  const mine = m.sender_id === profile?.user_id;
+                  return (
+                    <div key={m.id} className={cn('flex', mine ? 'justify-end' : 'justify-start')}>
+                      <div className={cn('max-w-[70%] rounded-2xl px-3 py-2', mine ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-800 text-ink dark:text-slate-100')}>
+                        <p className="text-sm">{m.body}</p>
+                        <div className={cn('flex items-center gap-1 mt-0.5 text-xs', mine ? 'text-primary-100' : 'text-ink-muted')}>
+                          <span>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          {mine && (m.read_at ? <CheckCheck className="h-3 w-3" /> : <Check className="h-3 w-3" />)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
+              <form onSubmit={send} className="flex items-center gap-2 p-3 border-t border-slate-100 dark:border-slate-800">
+                <button type="button" onClick={() => setShowEmoji((v) => !v)} className="p-2 text-ink-muted hover:text-primary-600"><Smile className="h-5 w-5" /></button>
+                <button type="button" className="p-2 text-ink-muted hover:text-primary-600"><Paperclip className="h-5 w-5" /></button>
+                <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type a message…" className="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-ink dark:text-slate-100 focus:ring-2 focus:ring-primary-500/30 outline-none" />
+                <Button type="submit" size="sm" leftIcon={<Send className="h-4 w-4" />}>Send</Button>
+              </form>
+              {showEmoji && (
+                <div className="p-2 border-t border-slate-100 dark:border-slate-800 flex gap-1 flex-wrap">
+                  {['😀','😂','😍','👍','👏','🙏','❤️','🎉','🔥','✅','❌','⭐'].map((e) => (
+                    <button key={e} type="button" onClick={() => { setInput((v) => v + e); setShowEmoji(false); }} className="text-xl p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">{e}</button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
-          <Select label="Teacher" required value={form.recipient_id} onChange={(e) => setForm((f) => ({ ...f, recipient_id: e.target.value }))}><option value="">Select…</option>{teachers.map((t) => <option key={t.id} value={t.user_id}>{t.full_name}</option>)}</Select>
-          <Input label="Subject" value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} placeholder={selectedChild ? `Re: ${selectedChild.full_name}` : ''} />
-          <Textarea label="Message" required value={form.body} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))} />
-          <Button type="submit" loading={sending} leftIcon={<Send className="h-4 w-4" />}>Send</Button>
-        </form></Card>
-        <Card><CardHeader title="Recent Messages" />{messages.length === 0 ? <EmptyState title="No messages yet" /> : (
-          <div className="space-y-3">{messages.map((m) => (
-            <div key={m.id} className="rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3">
-              <div className="flex items-center justify-between"><p className="text-sm font-medium text-ink dark:text-slate-100">{m.sender_id === profile?.user_id ? 'You' : 'Teacher'}</p><p className="text-xs text-ink-muted">{relativeTime(m.created_at)}</p></div>
-              {m.subject && <p className="text-xs font-medium text-ink-soft mt-1">{m.subject}</p>}
-              <p className="text-sm text-ink-soft dark:text-slate-300 mt-1">{m.body}</p>
-            </div>
-          ))}</div>
-        )}</Card>
+        </Card>
       </div>
     </div>
   );
