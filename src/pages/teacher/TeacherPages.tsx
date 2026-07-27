@@ -362,17 +362,14 @@ export function TeacherHomework() {
 export function TeacherExams() {
   const { profile } = useAuth();
   const { toast } = useToast();
-  const { classes, subjects, classSubjects, examSessions, refresh } = useSchoolData();
+  const { classes, subjects, classSubjects, examSessions } = useSchoolData();
   const { years, terms, selectedYearId, selectedTermId, setYear, setTerm } = useAcademic();
   const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'sessions' | 'schedule'>('sessions');
   const [showSessionForm, setShowSessionForm] = useState(false);
   const [showExamForm, setShowExamForm] = useState(false);
-  const [editingSession, setEditingSession] = useState<ExamSession | null>(null);
-  const [editingExam, setEditingExam] = useState<Exam | null>(null);
-  const [viewingSession, setViewingSession] = useState<ExamSession | null>(null);
-  const [sessionForm, setSessionForm] = useState({ name: '', start_date: '', end_date: '', status: 'scheduled' as const });
+  const [sessionForm, setSessionForm] = useState({ name: '', start_date: '', end_date: '' });
   const [examForm, setExamForm] = useState({ exam_session_id: '', class_id: '', subject_id: '', exam_date: '', start_time: '', end_time: '', duration_minutes: '', room: '', total_marks: '100' });
   const [saving, setSaving] = useState(false);
 
@@ -385,74 +382,31 @@ export function TeacherExams() {
   };
   useEffect(loadExams, [profile?.school_id]);
 
-  const openNewSession = () => { setEditingSession(null); setSessionForm({ name: '', start_date: '', end_date: '', status: 'scheduled' }); setShowSessionForm(true); };
-  const openEditSession = (es: ExamSession) => { setEditingSession(es); setSessionForm({ name: es.name, start_date: es.start_date ?? '', end_date: es.end_date ?? '', status: es.status as 'scheduled' }); setShowSessionForm(true); };
-
-  const saveSession = async (e: FormEvent) => {
+  const createSession = async (e: FormEvent) => {
     e.preventDefault(); setSaving(true);
-    if (editingSession) {
-      const { error } = await supabase.from('exam_sessions').update({
-        name: sessionForm.name, start_date: sessionForm.start_date || null, end_date: sessionForm.end_date || null, status: sessionForm.status,
-      }).eq('id', editingSession.id);
-      setSaving(false);
-      if (error) { toast(error.message, 'error'); return; }
-      toast('Exam session updated.', 'success');
-    } else {
-      const { error } = await supabase.from('exam_sessions').insert({
-        school_id: profile?.school_id, academic_year_id: selectedYearId || null, term_id: selectedTermId || null,
-        name: sessionForm.name, start_date: sessionForm.start_date || null, end_date: sessionForm.end_date || null, status: sessionForm.status,
-      });
-      setSaving(false);
-      if (error) { toast(error.message, 'error'); return; }
-      toast('Exam session created.', 'success');
-    }
-    setShowSessionForm(false); refresh();
-  };
-
-  const deleteSession = async (es: ExamSession) => {
-    if (!confirm(`Delete "${es.name}"? This also deletes all exams inside it.`)) return;
-    const { error } = await supabase.from('exam_sessions').delete().eq('id', es.id);
+    const { error } = await supabase.from('exam_sessions').insert({
+      school_id: profile?.school_id, academic_year_id: selectedYearId || null, term_id: selectedTermId || null,
+      name: sessionForm.name, start_date: sessionForm.start_date || null, end_date: sessionForm.end_date || null, status: 'scheduled',
+    });
+    setSaving(false);
     if (error) { toast(error.message, 'error'); return; }
-    toast('Session deleted.', 'success'); refresh(); loadExams();
+    toast('Exam session created.', 'success'); setShowSessionForm(false); setSessionForm({ name: '', start_date: '', end_date: '' });
   };
 
-  const openNewExam = () => { setEditingExam(null); setExamForm({ exam_session_id: '', class_id: '', subject_id: '', exam_date: '', start_time: '', end_time: '', duration_minutes: '', room: '', total_marks: '100' }); setShowExamForm(true); };
-  const openEditExam = (ex: Exam) => {
-    setEditingExam(ex);
-    setExamForm({ exam_session_id: ex.exam_session_id ?? '', class_id: ex.class_id ?? '', subject_id: ex.subject_id ?? '', exam_date: ex.exam_date ?? '', start_time: ex.start_time ?? '', end_time: ex.end_time ?? '', duration_minutes: ex.duration_minutes ? String(ex.duration_minutes) : '', room: ex.room ?? '', total_marks: String(ex.total_marks) });
-    setShowExamForm(true);
-  };
-
-  const saveExam = async (e: FormEvent) => {
+  const createExam = async (e: FormEvent) => {
     e.preventDefault(); setSaving(true);
     const subj = subjects.find((s) => s.id === examForm.subject_id);
-    const payload = {
+    const { error } = await supabase.from('exams').insert({
       school_id: profile?.school_id, exam_session_id: examForm.exam_session_id, term_id: selectedTermId || null,
       name: `${subj?.name ?? 'Exam'}`, exam_type: 'midterm',
       class_id: examForm.class_id, subject_id: examForm.subject_id,
       exam_date: examForm.exam_date, start_time: examForm.start_time || null, end_time: examForm.end_time || null,
       duration_minutes: examForm.duration_minutes ? Number(examForm.duration_minutes) : null, room: examForm.room || null,
-      teacher_id: profile?.user_id, total_marks: Number(examForm.total_marks) || 100, status: 'scheduled' as const,
-    };
-    if (editingExam) {
-      const { error } = await supabase.from('exams').update(payload).eq('id', editingExam.id);
-      setSaving(false);
-      if (error) { toast(error.message, 'error'); return; }
-      toast('Exam updated.', 'success');
-    } else {
-      const { error } = await supabase.from('exams').insert(payload);
-      setSaving(false);
-      if (error) { toast(error.message, 'error'); return; }
-      toast('Exam scheduled.', 'success');
-    }
-    setShowExamForm(false); loadExams();
-  };
-
-  const deleteExam = async (ex: Exam) => {
-    if (!confirm('Delete this scheduled exam?')) return;
-    const { error } = await supabase.from('exams').delete().eq('id', ex.id);
+      teacher_id: profile?.user_id, total_marks: Number(examForm.total_marks) || 100, status: 'scheduled',
+    });
+    setSaving(false);
     if (error) { toast(error.message, 'error'); return; }
-    toast('Exam deleted.', 'success'); loadExams();
+    toast('Exam scheduled.', 'success'); setShowExamForm(false); setExamForm({ exam_session_id: '', class_id: '', subject_id: '', exam_date: '', start_time: '', end_time: '', duration_minutes: '', room: '', total_marks: '100' }); loadExams();
   };
 
   const sessionStatusBadge = (status: string) => {
@@ -465,13 +419,11 @@ export function TeacherExams() {
     return map[status] ?? map.draft;
   };
 
-  const viewingSessionExams = viewingSession ? exams.filter((e) => e.exam_session_id === viewingSession.id) : [];
-
   return (
     <div>
       <PageHeader title="Exams" subtitle="Create exam sessions and schedule exams." icon={<ClipboardList className="h-5 w-5" />} action={tab === 'sessions'
-        ? <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openNewSession}>New Session</Button>
-        : <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openNewExam}>Schedule Exam</Button>
+        ? <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowSessionForm(true)}>New Session</Button>
+        : <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowExamForm(true)}>Schedule Exam</Button>
       } />
       <Card className="mb-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -498,17 +450,12 @@ export function TeacherExams() {
             return (
               <Card key={es.id}>
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
+                  <div>
                     <h3 className="font-semibold text-ink dark:text-slate-100">{es.name}</h3>
                     <p className="text-sm text-ink-muted mt-1">{es.start_date ? formatDate(es.start_date) : '—'} → {es.end_date ? formatDate(es.end_date) : '—'}</p>
                     <p className="text-xs text-ink-muted mt-1">{sessionExams.length} exam(s) scheduled</p>
                   </div>
                   <Badge variant={sb.variant}>{sb.label}</Badge>
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <Button size="sm" variant="secondary" onClick={() => setViewingSession(es)}>View Details</Button>
-                  <Button size="sm" variant="ghost" onClick={() => openEditSession(es)}>Edit</Button>
-                  <Button size="sm" variant="ghost" className="text-rose-600 hover:bg-rose-50" onClick={() => deleteSession(es)}>Delete</Button>
                 </div>
               </Card>
             );
@@ -520,7 +467,7 @@ export function TeacherExams() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="text-left text-ink-muted border-b border-slate-100 dark:border-slate-800">
-                  <th className="py-2 pr-3">Date</th><th className="py-2 pr-3">Class</th><th className="py-2 pr-3">Subject</th><th className="py-2 pr-3">Time</th><th className="py-2 pr-3">Room</th><th className="py-2 pr-3">Total</th><th className="py-2 pr-3"></th>
+                  <th className="py-2 pr-3">Date</th><th className="py-2 pr-3">Class</th><th className="py-2 pr-3">Subject</th><th className="py-2 pr-3">Time</th><th className="py-2 pr-3">Room</th><th className="py-2 pr-3">Total</th>
                 </tr></thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {exams.map((e) => (
@@ -531,7 +478,6 @@ export function TeacherExams() {
                       <td className="py-2 pr-3 text-ink-soft dark:text-slate-300">{e.start_time ? `${e.start_time.slice(0, 5)} - ${e.end_time?.slice(0, 5) ?? ''}` : '—'}</td>
                       <td className="py-2 pr-3 text-ink-soft dark:text-slate-300">{e.room ?? '—'}</td>
                       <td className="py-2 pr-3 text-ink-soft dark:text-slate-300">{e.total_marks}</td>
-                      <td className="py-2 pr-3"><div className="flex gap-1"><button onClick={() => openEditExam(e)} className="text-xs text-primary-600 hover:underline">Edit</button><button onClick={() => deleteExam(e)} className="text-xs text-rose-600 hover:underline">Delete</button></div></td>
                     </tr>
                   ))}
                 </tbody>
@@ -541,46 +487,18 @@ export function TeacherExams() {
         )
       )}
 
-      {/* Session detail modal */}
-      <Modal open={!!viewingSession} onClose={() => setViewingSession(null)} title={viewingSession?.name ?? 'Session'} description={viewingSession ? `${viewingSession.start_date ? formatDate(viewingSession.start_date) : '—'} → ${viewingSession.end_date ? formatDate(viewingSession.end_date) : '—'}` : ''} size="lg">
-        {viewingSession && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Badge variant={sessionStatusBadge(viewingSession.status).variant}>{sessionStatusBadge(viewingSession.status).label}</Badge>
-              <span className="text-sm text-ink-muted">{viewingSessionExams.length} exam(s)</span>
-            </div>
-            {viewingSessionExams.length === 0 ? <EmptyState title="No exams in this session yet" /> : (
-              <div className="space-y-2">{viewingSessionExams.map((e) => (
-                <div key={e.id} className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3">
-                  <div>
-                    <p className="text-sm font-medium text-ink dark:text-slate-100">{subjects.find((s) => s.id === e.subject_id)?.name ?? '—'}</p>
-                    <p className="text-xs text-ink-muted">{classes.find((c) => c.id === e.class_id)?.name ?? '—'} · {e.exam_date ? formatDate(e.exam_date) : '—'} · {e.start_time ? `${e.start_time.slice(0, 5)}` : ''} · {e.total_marks} marks</p>
-                  </div>
-                  <Badge variant="primary">{e.room ?? '—'}</Badge>
-                </div>
-              ))}</div>
-            )}
-          </div>
-        )}
-      </Modal>
-
-      {/* Session form modal */}
-      <Modal open={showSessionForm} onClose={() => setShowSessionForm(false)} title={editingSession ? 'Edit Exam Session' : 'New Exam Session'} footer={<><Button variant="secondary" onClick={() => setShowSessionForm(false)}>Cancel</Button><Button form="session-form" type="submit" loading={saving}>{editingSession ? 'Save' : 'Create'}</Button></>}>
-        <form id="session-form" onSubmit={saveSession} className="space-y-4">
+      <Modal open={showSessionForm} onClose={() => setShowSessionForm(false)} title="New Exam Session" footer={<><Button variant="secondary" onClick={() => setShowSessionForm(false)}>Cancel</Button><Button form="session-form" type="submit" loading={saving}>Create</Button></>}>
+        <form id="session-form" onSubmit={createSession} className="space-y-4">
           <Input label="Session Name" required placeholder="e.g. Midterm Term 1" value={sessionForm.name} onChange={(e) => setSessionForm((f) => ({ ...f, name: e.target.value }))} />
           <div className="grid sm:grid-cols-2 gap-4">
             <Input label="Start Date" type="date" value={sessionForm.start_date} onChange={(e) => setSessionForm((f) => ({ ...f, start_date: e.target.value }))} />
             <Input label="End Date" type="date" value={sessionForm.end_date} onChange={(e) => setSessionForm((f) => ({ ...f, end_date: e.target.value }))} />
           </div>
-          <Select label="Status" value={sessionForm.status} onChange={(e) => setSessionForm((f) => ({ ...f, status: e.target.value as any }))}>
-            <option value="draft">Draft</option><option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="published">Published</option>
-          </Select>
         </form>
       </Modal>
 
-      {/* Exam form modal */}
-      <Modal open={showExamForm} onClose={() => setShowExamForm(false)} title={editingExam ? 'Edit Exam' : 'Schedule Exam'} size="lg" footer={<><Button variant="secondary" onClick={() => setShowExamForm(false)}>Cancel</Button><Button form="exam-form" type="submit" loading={saving}>{editingExam ? 'Save' : 'Schedule'}</Button></>}>
-        <form id="exam-form" onSubmit={saveExam} className="space-y-4">
+      <Modal open={showExamForm} onClose={() => setShowExamForm(false)} title="Schedule Exam" size="lg" footer={<><Button variant="secondary" onClick={() => setShowExamForm(false)}>Cancel</Button><Button form="exam-form" type="submit" loading={saving}>Schedule</Button></>}>
+        <form id="exam-form" onSubmit={createExam} className="space-y-4">
           <Select label="Exam Session" required value={examForm.exam_session_id} onChange={(e) => setExamForm((f) => ({ ...f, exam_session_id: e.target.value }))}>
             <option value="">Select…</option>
             {examSessions.map((es) => <option key={es.id} value={es.id}>{es.name}</option>)}
@@ -757,7 +675,7 @@ export function TeacherMarks() {
 export function TeacherMessages() {
   const { profile } = useAuth();
   const { toast } = useToast();
-  const { teachers, parents, students, classes, classSubjects, loading } = useSchoolData();
+  const { teachers, parents, students, classes, classSubjects } = useSchoolData();
   const [tab, setTab] = useState<'teachers' | 'parents'>('teachers');
   const [activeChat, setActiveChat] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -765,6 +683,7 @@ export function TeacherMessages() {
   const [search, setSearch] = useState('');
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
   const [lastMsgMap, setLastMsgMap] = useState<Record<string, Message>>({});
+  const [typing, setTyping] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -778,9 +697,7 @@ export function TeacherMessages() {
   const [parentLinks, setParentLinks] = useState<Array<{ parent: AppUser; student: Student; className: string }>>([]);
   useEffect(() => {
     if (myStudentIds.length === 0) { setParentLinks([]); return; }
-    let cancelled = false;
     supabase.from('student_parents').select('parent_user_id, student_id').in('student_id', myStudentIds).then(({ data }) => {
-      if (cancelled) return;
       const links = (data ?? []).map((r: { parent_user_id: string; student_id: string }) => {
         const parent = parents.find((p) => p.user_id === r.parent_user_id);
         const student = students.find((s) => s.id === r.student_id);
@@ -789,8 +706,7 @@ export function TeacherMessages() {
       }).filter(Boolean) as Array<{ parent: AppUser; student: Student; className: string }>;
       setParentLinks(links);
     });
-    return () => { cancelled = true; };
-  }, [myStudentIds.join(','), parents.length, students.length, classes.length]);
+  }, [myStudentIds.join(','), parents, students, classes]);
 
   const contactList = tab === 'teachers'
     ? teacherList.map((t) => ({ user: t, label: '', subLabel: '' }))
@@ -865,8 +781,7 @@ export function TeacherMessages() {
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" leftIcon={<Search className="h-4 w-4" />} />
           </div>
           <div className="flex-1 overflow-y-auto">
-            {loading ? <div className="p-4 space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800 animate-pulse" />)}</div>
-            : filteredContacts.length === 0 ? <div className="p-4"><EmptyState title="No contacts" /></div> : filteredContacts.map((c) => {
+            {filteredContacts.length === 0 ? <div className="p-4"><EmptyState title="No contacts" /></div> : filteredContacts.map((c) => {
               const last = lastMsgMap[c.user.user_id];
               const unread = unreadMap[c.user.user_id] ?? 0;
               return (
@@ -907,6 +822,7 @@ export function TeacherMessages() {
                     </div>
                   );
                 })}
+                {typing && <div className="flex justify-start"><div className="bg-slate-100 dark:bg-slate-800 rounded-2xl px-3 py-2"><div className="flex gap-1"><span className="h-1.5 w-1.5 rounded-full bg-ink-muted animate-bounce" /><span className="h-1.5 w-1.5 rounded-full bg-ink-muted animate-bounce" style={{ animationDelay: '0.1s' }} /><span className="h-1.5 w-1.5 rounded-full bg-ink-muted animate-bounce" style={{ animationDelay: '0.2s' }} /></div></div></div>}
                 <div ref={messagesEndRef} />
               </div>
               <form onSubmit={send} className="flex items-center gap-2 p-3 border-t border-slate-100 dark:border-slate-800">
