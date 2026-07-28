@@ -33,6 +33,7 @@ interface ExamFormState {
   name: string;
   class_id: string;
   subject_id: string;
+  exam_type: string;
   exam_date: string;
   start_time: string;
   end_time: string;
@@ -63,6 +64,7 @@ const emptyExamForm: ExamFormState = {
   room: '',
   teacher_id: '',
   total_marks: '100',
+  exam_type: 'midterm',
   status: 'scheduled',
 };
 
@@ -252,6 +254,7 @@ export function SchoolAdminExamSessions() {
       room: ex.room ?? '',
       teacher_id: ex.teacher_id ?? '',
       total_marks: ex.total_marks?.toString() ?? '100',
+      exam_type: ex.exam_type ?? 'midterm',
       status: ex.status ?? 'scheduled',
     });
     setExamModalOpen(true);
@@ -269,7 +272,7 @@ export function SchoolAdminExamSessions() {
       exam_session_id: viewingSession.id,
       term_id: viewingSession.term_id,
       name: examForm.name.trim() || `${subjectMap[examForm.subject_id]?.name ?? 'Exam'} — ${classMap[examForm.class_id]?.name ?? ''}`,
-      exam_type: 'formal',
+      exam_type: examForm.exam_type,
       class_id: examForm.class_id,
       subject_id: examForm.subject_id,
       exam_date: examForm.exam_date || null,
@@ -517,6 +520,13 @@ export function SchoolAdminExamSessions() {
               <Input label="Duration (minutes)" type="number" value={examForm.duration_minutes} onChange={(e) => setExamForm({ ...examForm, duration_minutes: e.target.value })} />
               <Input label="Room" value={examForm.room} onChange={(e) => setExamForm({ ...examForm, room: e.target.value })} placeholder="e.g. Hall A" />
               <Input label="Total Marks" type="number" value={examForm.total_marks} onChange={(e) => setExamForm({ ...examForm, total_marks: e.target.value })} />
+              <Select label="Exam Type" value={examForm.exam_type} onChange={(e) => setExamForm({ ...examForm, exam_type: e.target.value })}>
+                <option value="midterm">Midterm</option>
+                <option value="endterm">End Term</option>
+                <option value="quiz">Quiz</option>
+                <option value="assessment">Assessment</option>
+                <option value="final">Final</option>
+              </Select>
               <Select label="Status" value={examForm.status} onChange={(e) => setExamForm({ ...examForm, status: e.target.value })}>
                 {EXAM_SESSION_STATUSES.map((s) => <option key={s} value={s}>{EXAM_SESSION_STATUS_LABELS[s]}</option>)}
               </Select>

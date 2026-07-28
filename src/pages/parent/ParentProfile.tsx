@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { User, Mail, Phone, MapPin, Calendar, Globe, Shield, Camera, Pencil, KeyRound, Check } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Calendar, Shield, Camera, Pencil, KeyRound, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
@@ -29,8 +29,6 @@ export function ParentProfile() {
     phone: '',
     address: '',
     gender: '',
-    date_of_birth: '',
-    nationality: '',
   });
 
   // Password form state
@@ -55,8 +53,6 @@ export function ParentProfile() {
         phone: profile.phone ?? '',
         address: profile.address ?? '',
         gender: profile.gender ?? '',
-        date_of_birth: profile.date_of_birth?.split('T')[0] ?? '',
-        nationality: profile.nationality ?? '',
       });
     }
   }, [editOpen, profile]);
@@ -112,8 +108,6 @@ export function ParentProfile() {
           phone: editForm.phone || null,
           address: editForm.address || null,
           gender: editForm.gender || null,
-          date_of_birth: editForm.date_of_birth || null,
-          nationality: editForm.nationality || null,
         })
         .eq('id', profile.id);
 
@@ -289,16 +283,6 @@ export function ParentProfile() {
               />
               <InfoRow
                 icon={<Calendar className="h-4 w-4" />}
-                label="Date of Birth"
-                value={formatDate(profile.date_of_birth)}
-              />
-              <InfoRow
-                icon={<Globe className="h-4 w-4" />}
-                label="Nationality"
-                value={profile.nationality ?? '—'}
-              />
-              <InfoRow
-                icon={<Calendar className="h-4 w-4" />}
                 label="Joined Date"
                 value={formatDate(profile.created_at)}
               />
@@ -382,21 +366,7 @@ export function ParentProfile() {
               <option value="female">Female</option>
               <option value="other">Other</option>
             </Select>
-
-            <Input
-              label="Date of Birth"
-              type="date"
-              value={editForm.date_of_birth}
-              onChange={(e) => setEditForm({ ...editForm, date_of_birth: e.target.value })}
-            />
           </div>
-
-          <Input
-            label="Nationality"
-            value={editForm.nationality}
-            onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })}
-            placeholder="Enter your nationality"
-          />
         </div>
       </Modal>
 
