@@ -5,7 +5,7 @@ import { ToastProvider } from '@/context/ToastContext';
 import { ParentProvider } from '@/context/ParentContext';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { DashboardLayout, type NavItem } from '@/components/layout/DashboardLayout';
-import { LayoutDashboard, BookOpen, GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, User, UserCog, Award } from 'lucide-react';
+import { LayoutDashboard, BookOpen, GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, User, UserCog, Award, Building2 } from 'lucide-react';
 
 // Auth
 import { LoginPage } from '@/pages/auth/LoginPage';
@@ -31,6 +31,10 @@ import { TeacherMarks } from '@/pages/teacher/TeacherMarks';
 import { TeacherResults } from '@/pages/teacher/TeacherResults';
 import { TeacherMessages } from '@/pages/teacher/TeacherMessages';
 import { TeacherProfile } from '@/pages/teacher/TeacherProfile';
+
+// Super Admin
+import { SuperAdminDashboard } from '@/pages/super-admin/SuperAdminDashboard';
+import { SuperAdminProfile } from '@/pages/super-admin/SuperAdminProfile';
 
 // Parent
 import { ParentDashboard } from '@/pages/parent/ParentDashboard';
@@ -63,6 +67,11 @@ function RoleRedirect() {
   const routes: Record<string, string> = { super_admin: '/super-admin', school_admin: '/school-admin', teacher: '/teacher', parent: '/parent' };
   return <Navigate to={routes[profile.role] ?? '/login'} replace />;
 }
+
+const superAdminNav: NavItem[] = [
+  { label: 'Dashboard', to: '/super-admin', icon: <LayoutDashboard className="h-5 w-5" /> },
+  { label: 'Profile', to: '/super-admin/profile', icon: <User className="h-5 w-5" /> },
+];
 
 const schoolAdminNav: NavItem[] = [
   { label: 'Dashboard', to: '/school-admin', icon: <LayoutDashboard className="h-5 w-5" /> },
@@ -99,7 +108,6 @@ const parentNav: NavItem[] = [
 
 export default function App() {
   return (
-
       <ToastProvider>
         <AuthProvider>
           <AcademicProvider>
@@ -107,6 +115,11 @@ export default function App() {
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/" element={<RoleRedirect />} />
+
+                <Route path="/super-admin" element={<ProtectedRoute allowedRoles={['super_admin']}><DashboardLayout navItems={superAdminNav} roleLabel="Super Admin" /></ProtectedRoute>}>
+                  <Route index element={<SuperAdminDashboard />} />
+                  <Route path="profile" element={<SuperAdminProfile />} />
+                </Route>
 
                 <Route path="/school-admin" element={<ProtectedRoute allowedRoles={['school_admin']}><DashboardLayout navItems={schoolAdminNav} roleLabel="School Admin" /></ProtectedRoute>}>
                   <Route index element={<SchoolAdminDashboard />} />
