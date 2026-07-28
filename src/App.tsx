@@ -5,12 +5,7 @@ import { ToastProvider } from '@/context/ToastContext';
 import { ParentProvider } from '@/context/ParentContext';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { DashboardLayout, type NavItem } from '@/components/layout/DashboardLayout';
-import {
-  LayoutDashboard, BookOpen, GraduationCap, CalendarCheck, BookCopy,
-  ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, User,
-  Users, Building2, GraduationCap as GradIcon, Award, Settings, Bell,
-  FolderTree, School, UserCog, FileBarChart,
-} from 'lucide-react';
+import { LayoutDashboard, BookOpen, GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, User, Users, Building2, GraduationCap as GradIcon, Award, Settings, Bell, FolderTree, School, UserCog, ChartBar as FileBarChart } from 'lucide-react';
 
 // Auth
 import { LoginPage } from '@/pages/auth/LoginPage';
