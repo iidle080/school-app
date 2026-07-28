@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, type FormEvent } from 'react';
-import { ClipboardList, Plus, Pencil, Trash2, Search, Calendar, Clock, MapPin, BookOpen, ChevronRight, ArrowLeft, Wand2, AlertCircle } from 'lucide-react';
+import { ClipboardList, Plus, Pencil, Trash2, Search, Calendar, ChevronRight, ArrowLeft, Wand2, AlertCircle, LayoutGrid, List } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useSchoolData } from '@/hooks/useSchoolData';
@@ -14,6 +14,7 @@ import { Badge, statusBadge } from '@/components/ui/Badge';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { RowSkeleton } from '@/components/ui/Spinner';
+import { ExamTimetable } from '@/components/exam/ExamTimetable';
 import { formatDate } from '@/lib/utils';
 import { EXAM_SESSION_STATUSES, EXAM_SESSION_STATUS_LABELS } from '@/lib/constants';
 import type { ExamSession, AcademicYear, Term, Exam, ClassRow, Subject, AppUser, ClassSubject } from '@/types';
@@ -92,6 +93,8 @@ export function SchoolAdminExamSessions() {
   const [savingExam, setSavingExam] = useState(false);
   const [deleteExamTarget, setDeleteExamTarget] = useState<Exam | null>(null);
   const [deletingExam, setDeletingExam] = useState(false);
+  const [viewMode, setViewMode] = useState<'timetable' | 'list'>('timetable');
+  const [classFilter, setClassFilter] = useState('');
 
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
   const [genForm, setGenForm] = useState({ term_id: '', weeks_before: '1', exam_type: 'endterm', start_time: '09:00', duration_minutes: '120', total_marks: '100' });
@@ -124,7 +127,7 @@ export function SchoolAdminExamSessions() {
 
   const teacherMap = useMemo(() => {
     const m: Record<string, AppUser> = {};
-    teachers.forEach((t) => { m[t.user_id] = t; });
+    teachers.forEach((t) => { m[t.id] = t; });
     return m;
   }, [teachers]);
 
@@ -198,9 +201,7 @@ export function SchoolAdminExamSessions() {
 
     const sessionId = sessionData.id;
     const examsToInsert: Record<string, unknown>[] = [];
-    const daysNeeded = classes.length * subjects.length;
     const maxPerDay = 3;
-    const daysAvailable = Math.ceil(daysNeeded / maxPerDay);
     const startTime = genForm.start_time || '09:00';
     const dur = parseInt(genForm.duration_minutes) || 120;
     const [sh, sm] = startTime.split(':').map(Number);
@@ -340,12 +341,17 @@ export function SchoolAdminExamSessions() {
 
   const openSessionDetail = async (s: ExamSession) => {
     setViewingSession(s);
+    setClassFilter('');
     await loadExams(s.id);
   };
 
-  const openAddExam = () => {
+  const openAddExam = (presetDate?: string, presetClassId?: string) => {
     setEditingExam(null);
-    setExamForm(emptyExamForm);
+    setExamForm({
+      ...emptyExamForm,
+      exam_date: presetDate ?? '',
+      class_id: presetClassId ?? '',
+    });
     setExamModalOpen(true);
   };
 
@@ -368,11 +374,59 @@ export function SchoolAdminExamSessions() {
     setExamModalOpen(true);
   };
 
+  // Validate exam form before save — checks for conflicts
+  const validateExamForm = (): string | null => {
+    if (!examForm.class_id) return 'Class is required';
+    if (!examForm.subject_id) return 'Subject is required';
+    if (!examForm.exam_date) return 'Exam date is required';
+    if (!viewingSession) return 'No session selected';
+
+    // Check for time conflicts with existing exams in the same class + date
+    const sameSlot = exams.filter((e) =>
+      e.class_id === examForm.class_id &&
+      e.exam_date === examForm.exam_date &&
+      e.id !== editingExam?.id &&
+      examForm.start_time &&
+      e.start_time === examForm.start_time
+    );
+    if (sameSlot.length > 0) {
+      return `Another exam for ${classMap[examForm.class_id]?.name ?? 'this class'} already starts at ${examForm.start_time} on this date.`;
+    }
+
+    // Check overlap if both have time ranges
+    if (examForm.start_time && examForm.end_time) {
+      const newStart = toMinutes(examForm.start_time);
+      const newEnd = toMinutes(examForm.end_time);
+      if (newEnd <= newStart) return 'End time must be after start time';
+      for (const e of exams) {
+        if (e.id === editingExam?.id) continue;
+        if (e.class_id !== examForm.class_id || e.exam_date !== examForm.exam_date) continue;
+        if (!e.start_time || !e.end_time) continue;
+        const eStart = toMinutes(e.start_time);
+        const eEnd = toMinutes(e.end_time);
+        if (newStart < eEnd && eStart < newEnd) {
+          return `Time conflict with "${e.name}" (${e.start_time}–${e.end_time}) for ${classMap[examForm.class_id]?.name ?? 'this class'}.`;
+        }
+      }
+    }
+
+    // Validate date is within session range
+    if (viewingSession.start_date && examForm.exam_date < viewingSession.start_date) {
+      return `Exam date is before the session start (${formatDate(viewingSession.start_date)}).`;
+    }
+    if (viewingSession.end_date && examForm.exam_date > viewingSession.end_date) {
+      return `Exam date is after the session end (${formatDate(viewingSession.end_date)}).`;
+    }
+
+    return null;
+  };
+
   const submitExam = async (e: FormEvent) => {
     e.preventDefault();
     if (!viewingSession) return;
-    if (!examForm.class_id) { toast('Class is required', 'error'); return; }
-    if (!examForm.subject_id) { toast('Subject is required', 'error'); return; }
+
+    const validationError = validateExamForm();
+    if (validationError) { toast(validationError, 'error'); return; }
 
     setSavingExam(true);
     const payload: Record<string, unknown> = {
@@ -505,20 +559,15 @@ export function SchoolAdminExamSessions() {
       key: 'time',
       header: 'Time',
       render: (ex) => (
-        <div className="flex items-center gap-1.5 text-ink-soft dark:text-slate-300">
-          <Clock className="h-3.5 w-3.5 text-ink-muted" />
+        <span className="text-ink-soft dark:text-slate-300">
           {ex.start_time ? `${ex.start_time}${ex.end_time ? `–${ex.end_time}` : ''}` : '—'}
-        </div>
+        </span>
       ),
     },
     {
       key: 'room',
       header: 'Room',
-      render: (ex) => (
-        <span className="text-ink-soft dark:text-slate-300">
-          {ex.room ? <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-ink-muted" />{ex.room}</span> : '—'}
-        </span>
-      ),
+      render: (ex) => <span className="text-ink-soft dark:text-slate-300">{ex.room ?? '—'}</span>,
     },
     {
       key: 'teacher',
@@ -548,6 +597,11 @@ export function SchoolAdminExamSessions() {
     },
   ];
 
+  const filteredExams = useMemo(() => {
+    if (!classFilter) return exams;
+    return exams.filter((e) => e.class_id === classFilter);
+  }, [exams, classFilter]);
+
   if (viewingSession) {
     return (
       <div>
@@ -559,10 +613,10 @@ export function SchoolAdminExamSessions() {
           title={viewingSession.name}
           subtitle={`${yearMap[viewingSession.academic_year_id ?? '']?.name ?? '—'}${viewingSession.term_id ? ` · ${termMap[viewingSession.term_id]?.name ?? ''}` : ''}`}
           icon={<ClipboardList className="h-6 w-6" />}
-          action={<Button onClick={openAddExam} leftIcon={<Plus className="h-4 w-4" />}>Add Exam</Button>}
+          action={<Button onClick={() => openAddExam()} leftIcon={<Plus className="h-4 w-4" />}>Add Exam</Button>}
         />
 
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
           <Card>
             <p className="text-sm text-ink-muted">Duration</p>
             <p className="mt-1 font-medium text-ink dark:text-slate-100">
@@ -576,6 +630,10 @@ export function SchoolAdminExamSessions() {
             <p className="mt-1 font-medium text-ink dark:text-slate-100">{exams.length}</p>
           </Card>
           <Card>
+            <p className="text-sm text-ink-muted">Classes</p>
+            <p className="mt-1 font-medium text-ink dark:text-slate-100">{new Set(exams.map((e) => e.class_id).filter(Boolean)).size}</p>
+          </Card>
+          <Card>
             <p className="text-sm text-ink-muted">Status</p>
             <div className="mt-1 flex items-center gap-2">
               <Badge variant={statusBadge(viewingSession.status).variant}>{statusBadge(viewingSession.status).label}</Badge>
@@ -584,15 +642,52 @@ export function SchoolAdminExamSessions() {
           </Card>
         </div>
 
-        <Card>
-          {examsLoading ? (
-            <RowSkeleton rows={4} />
-          ) : exams.length === 0 ? (
-            <EmptyState title="No exams scheduled" description='Click "Add Exam" to schedule individual exams with subjects, classes, dates, and rooms.' icon={<BookOpen className="h-10 w-10" />} />
-          ) : (
-            <DataTable columns={examColumns} data={exams} rowKey={(ex) => ex.id} />
-          )}
-        </Card>
+        {/* View toggle + class filter */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setViewMode('timetable')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${viewMode === 'timetable' ? 'bg-primary-50 text-primary-600 dark:bg-primary-500/15 dark:text-primary-light' : 'text-ink-muted hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+            >
+              <LayoutGrid className="h-4 w-4" /> Timetable
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-primary-50 text-primary-600 dark:bg-primary-500/15 dark:text-primary-light' : 'text-ink-muted hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+            >
+              <List className="h-4 w-4" /> List
+            </button>
+          </div>
+          <div className="sm:w-64">
+            <Select value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
+              <option value="">All classes</option>
+              {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </div>
+        </div>
+
+        {examsLoading ? (
+          <RowSkeleton rows={4} />
+        ) : exams.length === 0 ? (
+          <Card>
+            <EmptyState title="No exams scheduled" description='Click "Add Exam" to start building the examination timetable. Each class can have its own independent schedule.' icon={<ClipboardList className="h-10 w-10" />} />
+          </Card>
+        ) : viewMode === 'timetable' ? (
+          <ExamTimetable
+            exams={filteredExams}
+            classes={classes}
+            subjects={subjects}
+            teachers={teachers}
+            editable
+            onEditExam={openEditExam}
+            onDeleteExam={(ex) => setDeleteExamTarget(ex)}
+            onAddForDateClass={(date, classId) => openAddExam(date === 'unscheduled' ? '' : date, classId)}
+          />
+        ) : (
+          <Card>
+            <DataTable columns={examColumns} data={filteredExams} rowKey={(ex) => ex.id} />
+          </Card>
+        )}
 
         <Modal
           open={examModalOpen}
@@ -618,10 +713,10 @@ export function SchoolAdminExamSessions() {
                 <option value="">Select subject</option>
                 {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </Select>
-              <Input label="Exam Date" type="date" value={examForm.exam_date} onChange={(e) => setExamForm({ ...examForm, exam_date: e.target.value })} />
+              <Input label="Exam Date *" type="date" required value={examForm.exam_date} onChange={(e) => setExamForm({ ...examForm, exam_date: e.target.value })} />
               <Select label="Invigilating Teacher" value={examForm.teacher_id} onChange={(e) => setExamForm({ ...examForm, teacher_id: e.target.value })}>
                 <option value="">Unassigned</option>
-                {teachers.map((t) => <option key={t.user_id} value={t.user_id}>{t.full_name}</option>)}
+                {teachers.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
               </Select>
               <Input label="Start Time" type="time" value={examForm.start_time} onChange={(e) => setExamForm({ ...examForm, start_time: e.target.value })} />
               <Input label="End Time" type="time" value={examForm.end_time} onChange={(e) => setExamForm({ ...examForm, end_time: e.target.value })} />
@@ -639,6 +734,13 @@ export function SchoolAdminExamSessions() {
                 {EXAM_SESSION_STATUSES.map((s) => <option key={s} value={s}>{EXAM_SESSION_STATUS_LABELS[s]}</option>)}
               </Select>
             </div>
+            {examForm.class_id && examForm.exam_date && (
+              <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
+                <p className="text-xs text-ink-muted">
+                  {exams.filter((e) => e.class_id === examForm.class_id && e.exam_date === examForm.exam_date && e.id !== editingExam?.id).length} other exam(s) already scheduled for {classMap[examForm.class_id]?.name ?? 'this class'} on this date.
+                </p>
+              </div>
+            )}
           </form>
         </Modal>
 
@@ -665,7 +767,7 @@ export function SchoolAdminExamSessions() {
     <div>
       <PageHeader
         title="Exam Sessions"
-        subtitle="Create exam sessions and manage the exam schedule"
+        subtitle="Create exam sessions and build examination timetables"
         icon={<ClipboardList className="h-6 w-6" />}
         action={
           <div className="flex items-center gap-2">
@@ -817,4 +919,9 @@ export function SchoolAdminExamSessions() {
       </Modal>
     </div>
   );
+}
+
+function toMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
 }

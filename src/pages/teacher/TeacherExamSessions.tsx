@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
-import { ClipboardCheck, Calendar, Info, Lock, Clock, MapPin, BookOpen, ChevronRight, ArrowLeft } from 'lucide-react';
+import { ClipboardCheck, Calendar, Info, Lock, BookOpen, ChevronRight, ArrowLeft, LayoutGrid, List } from 'lucide-react';
 import { useSchoolData } from '@/hooks/useSchoolData';
+import { useAuth } from '@/context/AuthContext';
 import { useAcademic } from '@/context/AcademicContext';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -8,12 +9,14 @@ import { Select } from '@/components/ui/Form';
 import { Badge, statusBadge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { RowSkeleton } from '@/components/ui/Spinner';
+import { ExamTimetable } from '@/components/exam/ExamTimetable';
 import { formatDate } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { Exam, ExamSession, ClassRow, Subject, AppUser } from '@/types';
 
 export function TeacherExamSessions() {
-  const { examSessions, classes, subjects, teachers, loading } = useSchoolData();
+  const { profile } = useAuth();
+  const { examSessions, classes, subjects, teachers, classSubjects, loading } = useSchoolData();
   const { years, selectedYearId, setYear } = useAcademic();
 
   const [selectedYear, setSelectedYear] = useState(selectedYearId);
@@ -21,9 +24,24 @@ export function TeacherExamSessions() {
   const [viewingSession, setViewingSession] = useState<ExamSession | null>(null);
   const [exams, setExams] = useState<Exam[]>([]);
   const [examsLoading, setExamsLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<'timetable' | 'list'>('timetable');
+  const [classFilter, setClassFilter] = useState('');
 
   useEffect(() => { setSelectedYear(selectedYearId); }, [selectedYearId]);
 
+  // Classes the teacher is assigned to (as class teacher or subject teacher)
+  const myClasses = useMemo(() => {
+    if (!profile) return [];
+    return classes.filter(
+      (c) =>
+        c.class_teacher_id === profile.id ||
+        classSubjects.some((cs) => cs.class_id === c.id && cs.teacher_id === profile.id)
+    );
+  }, [classes, classSubjects, profile]);
+
+  const myClassIds = useMemo(() => myClasses.map((c) => c.id), [myClasses]);
+
+  // Filter sessions to only those that have exams in the teacher's classes
   const filteredSessions = useMemo(() => {
     if (!selectedYear) return examSessions;
     return examSessions.filter((es) => es.academic_year_id === selectedYear);
@@ -33,8 +51,9 @@ export function TeacherExamSessions() {
     if (filteredSessions.length === 0) { setExamCounts({}); return; }
     supabase
       .from('exams')
-      .select('exam_session_id')
+      .select('exam_session_id, class_id')
       .in('exam_session_id', filteredSessions.map((s) => s.id))
+      .in('class_id', myClassIds)
       .then(({ data }) => {
         const counts: Record<string, number> = {};
         (data ?? []).forEach((r: { exam_session_id: string }) => {
@@ -42,7 +61,12 @@ export function TeacherExamSessions() {
         });
         setExamCounts(counts);
       });
-  }, [filteredSessions]);
+  }, [filteredSessions, myClassIds]);
+
+  // Sessions relevant to this teacher (have at least 1 exam in their classes)
+  const teacherSessions = useMemo(() => {
+    return filteredSessions.filter((s) => (examCounts[s.id] ?? 0) > 0);
+  }, [filteredSessions, examCounts]);
 
   const classMap = useMemo(() => {
     const m: Record<string, ClassRow> = {};
@@ -58,23 +82,27 @@ export function TeacherExamSessions() {
 
   const teacherMap = useMemo(() => {
     const m: Record<string, AppUser> = {};
-    teachers.forEach((t) => { m[t.user_id] = t; });
+    teachers.forEach((t) => { m[t.id] = t; });
     return m;
   }, [teachers]);
 
   const openSessionDetail = async (s: ExamSession) => {
     setViewingSession(s);
+    setClassFilter('');
     setExamsLoading(true);
     const { data } = await supabase
       .from('exams')
       .select('*')
       .eq('exam_session_id', s.id)
+      .in('class_id', myClassIds)
       .order('exam_date', { ascending: true });
     setExams((data as Exam[]) ?? []);
     setExamsLoading(false);
   };
 
   if (viewingSession) {
+    const visibleExams = classFilter ? exams.filter((e) => e.class_id === classFilter) : exams;
+
     return (
       <div>
         <button onClick={() => setViewingSession(null)} className="mb-4 flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink dark:hover:text-slate-100">
@@ -97,7 +125,7 @@ export function TeacherExamSessions() {
             </p>
           </Card>
           <Card>
-            <p className="text-sm text-ink-muted">Total Exams</p>
+            <p className="text-sm text-ink-muted">Exams in Your Classes</p>
             <p className="mt-1 font-medium text-ink dark:text-slate-100">{exams.length}</p>
           </Card>
           <Card>
@@ -109,12 +137,42 @@ export function TeacherExamSessions() {
           </Card>
         </div>
 
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setViewMode('timetable')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${viewMode === 'timetable' ? 'bg-primary-50 text-primary-600 dark:bg-primary-500/15 dark:text-primary-light' : 'text-ink-muted hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+            >
+              <LayoutGrid className="h-4 w-4" /> Timetable
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-primary-50 text-primary-600 dark:bg-primary-500/15 dark:text-primary-light' : 'text-ink-muted hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+            >
+              <List className="h-4 w-4" /> List
+            </button>
+          </div>
+          <div className="sm:w-64">
+            <Select value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
+              <option value="">All my classes</option>
+              {myClasses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </div>
+        </div>
+
         {examsLoading ? (
-          <RowSkeleton rows={5} />
+          <RowSkeleton rows={4} />
         ) : exams.length === 0 ? (
           <Card>
-            <EmptyState title="No exams scheduled" description="The school administrator has not added any exams to this session yet." icon={<BookOpen className="h-10 w-10" />} />
+            <EmptyState title="No exams in your classes" description="The school administrator has not scheduled any exams for your classes in this session yet." icon={<BookOpen className="h-10 w-10" />} />
           </Card>
+        ) : viewMode === 'timetable' ? (
+          <ExamTimetable
+            exams={visibleExams}
+            classes={myClasses}
+            subjects={subjects}
+            teachers={teachers}
+          />
         ) : (
           <Card>
             <div className="overflow-x-auto">
@@ -132,11 +190,9 @@ export function TeacherExamSessions() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {exams.map((ex) => (
+                  {visibleExams.map((ex) => (
                     <tr key={ex.id} className="text-ink-soft dark:text-slate-300">
-                      <td className="py-2.5 pr-4">
-                        <p className="font-medium text-ink dark:text-slate-100">{ex.name}</p>
-                      </td>
+                      <td className="py-2.5 pr-4"><p className="font-medium text-ink dark:text-slate-100">{ex.name}</p></td>
                       <td className="py-2.5 pr-4">{subjectMap[ex.subject_id ?? '']?.name ?? '—'}</td>
                       <td className="py-2.5 pr-4">{classMap[ex.class_id ?? '']?.name ?? '—'}</td>
                       <td className="py-2.5 pr-4">
@@ -145,15 +201,8 @@ export function TeacherExamSessions() {
                           {ex.exam_date ? formatDate(ex.exam_date) : '—'}
                         </span>
                       </td>
-                      <td className="py-2.5 pr-4">
-                        <span className="flex items-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5 text-ink-muted" />
-                          {ex.start_time ? `${ex.start_time}${ex.end_time ? `–${ex.end_time}` : ''}` : '—'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 pr-4">
-                        {ex.room ? <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-ink-muted" />{ex.room}</span> : '—'}
-                      </td>
+                      <td className="py-2.5 pr-4">{ex.start_time ? `${ex.start_time}${ex.end_time ? `–${ex.end_time}` : ''}` : '—'}</td>
+                      <td className="py-2.5 pr-4">{ex.room ?? '—'}</td>
                       <td className="py-2.5 pr-4">{ex.teacher_id ? (teacherMap[ex.teacher_id]?.full_name ?? '—') : '—'}</td>
                       <td className="py-2.5 pr-4 text-right"><Badge variant="secondary">{ex.total_marks}</Badge></td>
                     </tr>
@@ -171,7 +220,7 @@ export function TeacherExamSessions() {
     <div>
       <PageHeader
         title="Exam Sessions"
-        subtitle="View exam sessions and the full exam schedule"
+        subtitle="View exam timetables for your assigned classes"
         icon={<ClipboardCheck className="h-5 w-5" />}
       />
 
@@ -179,10 +228,10 @@ export function TeacherExamSessions() {
         <Info className="mt-0.5 h-5 w-5 shrink-0 text-primary-600 dark:text-primary-light" />
         <div>
           <p className="text-sm font-medium text-primary-700 dark:text-primary-light">
-            Exam Sessions are created by your School Administrator.
+            Exam timetables are created by your School Administrator.
           </p>
           <p className="text-sm text-primary-600/80 dark:text-primary-light/70 mt-0.5">
-            Click a session to view the full exam schedule with subjects, classes, dates, times, and rooms.
+            You only see exams for classes you teach. Click a session to view the full timetable.
           </p>
         </div>
       </div>
@@ -201,17 +250,17 @@ export function TeacherExamSessions() {
 
       {loading ? (
         <RowSkeleton rows={4} />
-      ) : filteredSessions.length === 0 ? (
+      ) : teacherSessions.length === 0 ? (
         <Card>
           <EmptyState
             title="No exam sessions"
-            description="There are no exam sessions for the selected academic year."
+            description="There are no exam sessions with exams scheduled for your classes in the selected academic year."
             icon={<ClipboardCheck className="h-10 w-10" />}
           />
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredSessions.map((es) => {
+          {teacherSessions.map((es) => {
             const badge = statusBadge(es.status);
             const examCount = examCounts[es.id] ?? 0;
             return (
@@ -238,7 +287,7 @@ export function TeacherExamSessions() {
                   </div>
                   <div className="flex items-center gap-2 text-ink-muted">
                     <BookOpen className="h-4 w-4" />
-                    <span>{examCount} exam{examCount !== 1 ? 's' : ''} scheduled</span>
+                    <span>{examCount} exam{examCount !== 1 ? 's' : ''} in your classes</span>
                   </div>
                   {es.published && (
                     <div className="flex items-center gap-2 text-emerald-600">
@@ -252,7 +301,7 @@ export function TeacherExamSessions() {
                   onClick={() => openSessionDetail(es)}
                   className="mt-4 flex w-full items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm font-medium text-primary-600 dark:text-primary-light transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
                 >
-                  View Exam Schedule
+                  View Exam Timetable
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </Card>

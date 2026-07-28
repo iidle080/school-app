@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Calendar, Clock, MapPin, BookOpen, ClipboardList, ChevronDown, Award } from 'lucide-react';
+import { Calendar, ClipboardList, ChevronDown, BookOpen, Info } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useParent } from '@/context/ParentContext';
@@ -11,8 +11,9 @@ import { Badge, statusBadge } from '@/components/ui/Badge';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { RowSkeleton, CardSkeleton } from '@/components/ui/Spinner';
+import { ExamTimetable } from '@/components/exam/ExamTimetable';
 import { formatDate, cn } from '@/lib/utils';
-import type { ExamSession, Exam, Subject, ClassRow } from '@/types';
+import type { ExamSession, Exam, Subject, ClassRow, AppUser } from '@/types';
 
 export function ParentExams() {
   const { profile } = useAuth();
@@ -24,6 +25,7 @@ export function ParentExams() {
   const [exams, setExams] = useState<Exam[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [classes, setClasses] = useState<ClassRow[]>([]);
+  const [teachers, setTeachers] = useState<AppUser[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [childMenuOpen, setChildMenuOpen] = useState(false);
 
@@ -41,45 +43,38 @@ export function ParentExams() {
   }, [yearId, profile?.school_id]);
 
   useEffect(() => {
-    if (!profile?.school_id) { setSubjects([]); setClasses([]); return; }
+    if (!profile?.school_id) { setSubjects([]); setClasses([]); setTeachers([]); return; }
     Promise.all([
       supabase.from('subjects').select('*').eq('school_id', profile.school_id),
       supabase.from('classes').select('*').eq('school_id', profile.school_id),
-    ]).then(([subRes, clsRes]) => {
+      supabase.from('app_users').select('*').eq('school_id', profile.school_id).eq('role', 'teacher'),
+    ]).then(([subRes, clsRes, tRes]) => {
       setSubjects((subRes.data as Subject[]) ?? []);
       setClasses((clsRes.data as ClassRow[]) ?? []);
+      setTeachers((tRes.data as AppUser[]) ?? []);
     });
   }, [profile?.school_id]);
 
-  const subjectMap = useMemo(() => {
-    const m: Record<string, Subject> = {};
-    subjects.forEach((s) => { m[s.id] = s; });
-    return m;
-  }, [subjects]);
-
-  const classMap = useMemo(() => {
-    const m: Record<string, ClassRow> = {};
-    classes.forEach((c) => { m[c.id] = c; });
-    return m;
-  }, [classes]);
-
   useEffect(() => {
-    if (sessions.length === 0 || !selectedChild) { setExams([]); return; }
+    if (sessions.length === 0 || !selectedChild?.class_id) { setExams([]); return; }
     setDataLoading(true);
     const sessionIds = sessions.map((s) => s.id);
-    let query = supabase
+    supabase
       .from('exams')
       .select('*')
       .in('exam_session_id', sessionIds)
-      .order('exam_date', { ascending: true });
-    if (selectedChild.class_id) {
-      query = query.eq('class_id', selectedChild.class_id);
-    }
-    query.then(({ data }) => {
-      setExams((data as Exam[]) ?? []);
-      setDataLoading(false);
-    });
+      .eq('class_id', selectedChild.class_id)
+      .order('exam_date', { ascending: true })
+      .then(({ data }) => {
+        setExams((data as Exam[]) ?? []);
+        setDataLoading(false);
+      });
   }, [sessions, selectedChild]);
+
+  const childClass = useMemo(() => {
+    if (!selectedChild?.class_id) return null;
+    return classes.find((c) => c.id === selectedChild.class_id) ?? null;
+  }, [classes, selectedChild]);
 
   const examsBySession = useMemo(() => {
     const map: Record<string, Exam[]> = {};
@@ -166,7 +161,7 @@ export function ParentExams() {
             <div>
               <p className="font-semibold text-ink dark:text-slate-100">{selectedChild.full_name}</p>
               <p className="text-sm text-ink-muted">
-                {selectedChild.admission_number} · {selectedChildClass?.name ?? 'No class assigned'}
+                {selectedChild.admission_number} · {childClass?.name ?? 'No class assigned'}
               </p>
             </div>
           </div>
@@ -211,49 +206,19 @@ export function ParentExams() {
                 </div>
 
                 {sessionExams.length === 0 ? (
-                  <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 px-4 py-3 text-sm text-ink-muted">
-                    No exams scheduled for {selectedChildClass?.name ?? "your child's class"} yet.
+                  <div className="flex items-start gap-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 px-4 py-3">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
+                    <p className="text-sm text-ink-muted">
+                      No exams scheduled for {childClass?.name ?? "your child's class"} yet.
+                    </p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {sessionExams.map((ex) => (
-                      <div key={ex.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 dark:border-slate-700 p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-500/15 dark:text-primary-light">
-                            <BookOpen className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-ink dark:text-slate-100">{ex.name}</p>
-                            <p className="text-xs text-ink-muted">
-                              {subjectMap[ex.subject_id ?? '']?.name ?? '—'} · {classMap[ex.class_id ?? '']?.name ?? '—'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-4 text-sm text-ink-soft dark:text-slate-300">
-                          <span className="flex items-center gap-1.5">
-                            <Calendar className="h-3.5 w-3.5 text-ink-muted" />
-                            {ex.exam_date ? formatDate(ex.exam_date) : 'TBD'}
-                          </span>
-                          {ex.start_time && (
-                            <span className="flex items-center gap-1.5">
-                              <Clock className="h-3.5 w-3.5 text-ink-muted" />
-                              {ex.start_time}{ex.end_time ? `–${ex.end_time}` : ''}
-                            </span>
-                          )}
-                          {ex.room && (
-                            <span className="flex items-center gap-1.5">
-                              <MapPin className="h-3.5 w-3.5 text-ink-muted" />
-                              {ex.room}
-                            </span>
-                          )}
-                          <Badge variant="secondary">
-                            <Award className="mr-1 h-3 w-3" />
-                            {ex.total_marks} marks
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <ExamTimetable
+                    exams={sessionExams}
+                    classes={childClass ? [childClass] : []}
+                    subjects={subjects}
+                    teachers={teachers}
+                  />
                 )}
               </Card>
             );
