@@ -97,7 +97,7 @@ export function SchoolAdminExamSessions() {
   const [classFilter, setClassFilter] = useState('');
 
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
-  const [genForm, setGenForm] = useState({ term_id: '', weeks_before: '1', exam_type: 'endterm', start_time: '09:00', duration_minutes: '120', total_marks: '100' });
+  const [genForm, setGenForm] = useState({ term_id: '', weeks_before: '1', exam_type: 'endterm', start_time: '09:00', duration_minutes: '120', total_marks: '100', exams_per_day: '3' });
   const [generating, setGenerating] = useState(false);
   const [genPreview, setGenPreview] = useState<{ count: number; startDate: string; endDate: string } | null>(null);
 
@@ -157,14 +157,39 @@ export function SchoolAdminExamSessions() {
     if (!genTerm || !genTerm.end_date) return null;
     const termEnd = new Date(genTerm.end_date);
     const weeks = parseInt(genForm.weeks_before) || 1;
-    const examStart = new Date(termEnd);
-    examStart.setDate(examStart.getDate() - weeks * 7);
-    const examEnd = new Date(termEnd);
-    examEnd.setDate(examEnd.getDate() - 1);
-    if (examEnd <= examStart) { examEnd.setDate(examStart.getDate() + Math.max(1, Math.ceil(classSubjects.length / 3)) - 1); }
-    const totalExams = classes.length * subjects.length;
-    return { count: totalExams, startDate: examStart.toISOString().split('T')[0], endDate: examEnd.toISOString().split('T')[0] };
-  }, [genTerm, genForm.weeks_before, classes, subjects, classSubjects]);
+    const rawStart = new Date(termEnd);
+    rawStart.setDate(rawStart.getDate() - weeks * 7);
+    // Adjust to the nearest Monday (weekday=1)
+    const dayOfWeek = rawStart.getDay();
+    const mondayStart = new Date(rawStart);
+    if (dayOfWeek === 0) mondayStart.setDate(rawStart.getDate() + 1); // Sunday → Monday
+    else if (dayOfWeek === 6) mondayStart.setDate(rawStart.getDate() + 2); // Saturday → Monday
+    else if (dayOfWeek > 1) mondayStart.setDate(rawStart.getDate() - (dayOfWeek - 1)); // Tue-Fri → back to Monday
+
+    const perDay = parseInt(genForm.exams_per_day) || 3;
+    const maxSubjects = Math.max(
+      ...classes.map((cls) => {
+        const classSubs = classSubjects.filter((cs: ClassSubject) => cs.class_id === cls.id);
+        return classSubs.length > 0 ? classSubs.length : subjects.length;
+      }),
+      1
+    );
+    const weekdaysNeeded = Math.ceil(maxSubjects / perDay);
+    // Calculate end date by counting only weekdays (Mon-Fri)
+    let end = new Date(mondayStart);
+    let weekdaysCounted = 0;
+    while (weekdaysCounted < weekdaysNeeded) {
+      const dow = end.getDay();
+      if (dow !== 0 && dow !== 6) weekdaysCounted++;
+      if (weekdaysCounted < weekdaysNeeded) end.setDate(end.getDate() + 1);
+    }
+    if (end > termEnd) end = new Date(termEnd);
+    const totalExams = classes.reduce((sum, cls) => {
+      const classSubs = classSubjects.filter((cs: ClassSubject) => cs.class_id === cls.id);
+      return sum + (classSubs.length > 0 ? classSubs.length : subjects.length);
+    }, 0);
+    return { count: totalExams, startDate: mondayStart.toISOString().split('T')[0], endDate: end.toISOString().split('T')[0] };
+  }, [genTerm, genForm.weeks_before, genForm.exams_per_day, classes, subjects, classSubjects]);
 
   useEffect(() => { setGenPreview(genPreviewData); }, [genPreviewData]);
 
@@ -182,8 +207,14 @@ export function SchoolAdminExamSessions() {
     setGenerating(true);
     const termEnd = new Date(genTerm.end_date);
     const weeks = parseInt(genForm.weeks_before) || 1;
-    const examStart = new Date(termEnd);
-    examStart.setDate(examStart.getDate() - weeks * 7);
+    const rawStart = new Date(termEnd);
+    rawStart.setDate(rawStart.getDate() - weeks * 7);
+    // Adjust to the nearest Monday (weekday=1)
+    const dayOfWeek = rawStart.getDay();
+    const examStart = new Date(rawStart);
+    if (dayOfWeek === 0) examStart.setDate(rawStart.getDate() + 1); // Sunday → Monday
+    else if (dayOfWeek === 6) examStart.setDate(rawStart.getDate() + 2); // Saturday → Monday
+    else if (dayOfWeek > 1) examStart.setDate(rawStart.getDate() - (dayOfWeek - 1)); // Tue-Fri → back to Monday
 
     const sessionName = `${genTerm.name} Exams`;
     const { data: sessionData, error: sessionErr } = await supabase.from('exam_sessions').insert({
@@ -201,7 +232,7 @@ export function SchoolAdminExamSessions() {
 
     const sessionId = sessionData.id;
     const examsToInsert: Record<string, unknown>[] = [];
-    const maxPerDay = 3;
+    const maxPerDay = parseInt(genForm.exams_per_day) || 3;
     const startTime = genForm.start_time || '09:00';
     const dur = parseInt(genForm.duration_minutes) || 120;
     const [sh, sm] = startTime.split(':').map(Number);
@@ -211,36 +242,50 @@ export function SchoolAdminExamSessions() {
       { start: startMinutes + dur + 30, end: startMinutes + dur * 2 + 30 },
       { start: startMinutes + dur * 2 + 60, end: startMinutes + dur * 3 + 60 },
     ];
+    const fmtTime = (mins: number) => { const h = Math.floor(mins / 60); const m = mins % 60; return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
 
-    let examIndex = 0;
+    // Build the list of weekday dates (Mon-Fri) starting from examStart
+    const weekdayDates: string[] = [];
+    const cursor = new Date(examStart);
+    let safety = 0;
+    while (cursor <= termEnd && safety < 60) {
+      const dow = cursor.getDay();
+      if (dow !== 0 && dow !== 6) {
+        weekdayDates.push(cursor.toISOString().split('T')[0]);
+      }
+      cursor.setDate(cursor.getDate() + 1);
+      safety++;
+    }
+
+    // Each class distributes its subjects across the same weekday dates,
+    // up to maxPerDay exams per day. All classes run in parallel.
     for (const cls of classes) {
       const classSubs = classSubjects.filter((cs: ClassSubject) => cs.class_id === cls.id);
-      const subs = classSubs.length > 0 ? classSubs.map((cs: ClassSubject) => subjects.find((s) => s.id === cs.subject_id)).filter(Boolean) as Subject[] : subjects;
-      for (const sub of subs) {
-        const dayOffset = Math.floor(examIndex / maxPerDay);
-        const slotIdx = examIndex % maxPerDay;
-        const examDate = new Date(examStart);
-        examDate.setDate(examStart.getDate() + dayOffset);
-        if (examDate > termEnd) examDate.setTime(termEnd.getTime() - 86400000);
+      const subs = classSubs.length > 0
+        ? classSubs.map((cs: ClassSubject) => subjects.find((s) => s.id === cs.subject_id)).filter(Boolean) as Subject[]
+        : subjects;
+
+      for (let i = 0; i < subs.length; i++) {
+        const dayIndex = Math.floor(i / maxPerDay);
+        const slotIdx = i % maxPerDay;
+        const examDate = weekdayDates[dayIndex] ?? weekdayDates[weekdayDates.length - 1] ?? examStart.toISOString().split('T')[0];
         const slot = slotsPerDay[slotIdx];
-        const fmtTime = (mins: number) => { const h = Math.floor(mins / 60); const m = mins % 60; return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
         examsToInsert.push({
           school_id: SCHOOL_ID,
           exam_session_id: sessionId,
           term_id: genTerm.id,
-          name: `${sub.name} — ${cls.name}`,
+          name: `${subs[i].name} — ${cls.name}`,
           exam_type: genForm.exam_type,
           class_id: cls.id,
-          subject_id: sub.id,
-          exam_date: examDate.toISOString().split('T')[0],
+          subject_id: subs[i].id,
+          exam_date: examDate,
           start_time: fmtTime(slot.start),
           end_time: fmtTime(slot.end),
           duration_minutes: dur,
-          teacher_id: classSubs.find((cs: ClassSubject) => cs.subject_id === sub.id)?.teacher_id ?? null,
+          teacher_id: classSubs.find((cs: ClassSubject) => cs.subject_id === subs[i].id)?.teacher_id ?? null,
           total_marks: parseFloat(genForm.total_marks) || 100,
           status: 'scheduled',
         });
-        examIndex++;
       }
     }
 
@@ -878,6 +923,11 @@ export function SchoolAdminExamSessions() {
             </Select>
             <Input label="Daily Start Time" type="time" value={genForm.start_time} onChange={(e) => setGenForm({ ...genForm, start_time: e.target.value })} />
             <Input label="Duration (minutes)" type="number" value={genForm.duration_minutes} onChange={(e) => setGenForm({ ...genForm, duration_minutes: e.target.value })} />
+            <Select label="Exams Per Day" value={genForm.exams_per_day} onChange={(e) => setGenForm({ ...genForm, exams_per_day: e.target.value })}>
+              <option value="1">1 exam per day</option>
+              <option value="2">2 exams per day</option>
+              <option value="3">3 exams per day</option>
+            </Select>
             <Input label="Total Marks" type="number" value={genForm.total_marks} onChange={(e) => setGenForm({ ...genForm, total_marks: e.target.value })} />
           </div>
           {genPreview ? (
@@ -887,7 +937,7 @@ export function SchoolAdminExamSessions() {
                 <div className="text-sm text-primary-700 dark:text-primary-light">
                   <p className="font-medium">Schedule Preview</p>
                   <p className="mt-1">This will create <strong>{genPreview.count} exams</strong> across <strong>{classes.length} classes</strong> and <strong>{subjects.length} subjects</strong>.</p>
-                  <p className="mt-0.5">Exams will be scheduled from <strong>{formatDate(genPreview.startDate)}</strong> to <strong>{formatDate(genPreview.endDate)}</strong>, with up to 3 exams per day starting at {genForm.start_time}.</p>
+                  <p className="mt-0.5">All classes run in parallel from <strong>{formatDate(genPreview.startDate)}</strong> to <strong>{formatDate(genPreview.endDate)}</strong> (Monday–Friday only), with up to {genForm.exams_per_day} exam(s) per class per day starting at {genForm.start_time}.</p>
                 </div>
               </div>
             </div>
