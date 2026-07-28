@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, type FormEvent } from 'react';
-import { ClipboardList, Plus, Pencil, Trash2, Search, Calendar, Clock, MapPin, BookOpen, ChevronRight, ArrowLeft } from 'lucide-react';
+import { ClipboardList, Plus, Pencil, Trash2, Search, Calendar, Clock, MapPin, BookOpen, ChevronRight, ArrowLeft, Wand2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useSchoolData } from '@/hooks/useSchoolData';
@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { RowSkeleton } from '@/components/ui/Spinner';
 import { formatDate } from '@/lib/utils';
 import { EXAM_SESSION_STATUSES, EXAM_SESSION_STATUS_LABELS } from '@/lib/constants';
-import type { ExamSession, AcademicYear, Term, Exam, ClassRow, Subject, AppUser } from '@/types';
+import type { ExamSession, AcademicYear, Term, Exam, ClassRow, Subject, AppUser, ClassSubject } from '@/types';
 
 const SCHOOL_ID = 'ddccbf60-353f-40c5-a83f-3f8cf84eccfb';
 
@@ -70,7 +70,7 @@ const emptyExamForm: ExamFormState = {
 
 export function SchoolAdminExamSessions() {
   const { profile } = useAuth();
-  const { examSessions, classes, subjects, teachers, loading, refresh } = useSchoolData();
+  const { examSessions, classes, subjects, teachers, classSubjects, loading, refresh } = useSchoolData();
   const { years, terms } = useAcademic();
   const { toast } = useToast();
 
@@ -92,6 +92,11 @@ export function SchoolAdminExamSessions() {
   const [savingExam, setSavingExam] = useState(false);
   const [deleteExamTarget, setDeleteExamTarget] = useState<Exam | null>(null);
   const [deletingExam, setDeletingExam] = useState(false);
+
+  const [generateModalOpen, setGenerateModalOpen] = useState(false);
+  const [genForm, setGenForm] = useState({ term_id: '', weeks_before: '1', exam_type: 'endterm', start_time: '09:00', duration_minutes: '120', total_marks: '100' });
+  const [generating, setGenerating] = useState(false);
+  const [genPreview, setGenPreview] = useState<{ count: number; startDate: string; endDate: string } | null>(null);
 
   const yearMap = useMemo(() => {
     const m: Record<string, AcademicYear> = {};
@@ -142,6 +147,109 @@ export function SchoolAdminExamSessions() {
     if (!sessionForm.academic_year_id) return [];
     return terms.filter((t) => t.academic_year_id === sessionForm.academic_year_id);
   }, [terms, sessionForm.academic_year_id]);
+
+  const genTerm = useMemo(() => terms.find((t) => t.id === genForm.term_id) ?? null, [terms, genForm.term_id]);
+
+  const genPreviewData = useMemo(() => {
+    if (!genTerm || !genTerm.end_date) return null;
+    const termEnd = new Date(genTerm.end_date);
+    const weeks = parseInt(genForm.weeks_before) || 1;
+    const examStart = new Date(termEnd);
+    examStart.setDate(examStart.getDate() - weeks * 7);
+    const examEnd = new Date(termEnd);
+    examEnd.setDate(examEnd.getDate() - 1);
+    if (examEnd <= examStart) { examEnd.setDate(examStart.getDate() + Math.max(1, Math.ceil(classSubjects.length / 3)) - 1); }
+    const totalExams = classes.length * subjects.length;
+    return { count: totalExams, startDate: examStart.toISOString().split('T')[0], endDate: examEnd.toISOString().split('T')[0] };
+  }, [genTerm, genForm.weeks_before, classes, subjects, classSubjects]);
+
+  useEffect(() => { setGenPreview(genPreviewData); }, [genPreviewData]);
+
+  const openGenerateModal = () => {
+    const activeTerm = terms.find((t) => t.is_active) ?? terms[0];
+    setGenForm({ ...genForm, term_id: activeTerm?.id ?? '' });
+    setGenerateModalOpen(true);
+  };
+
+  const runGenerate = async () => {
+    if (!genTerm) { toast('Select a term', 'error'); return; }
+    if (classes.length === 0) { toast('No classes found', 'error'); return; }
+    if (subjects.length === 0) { toast('No subjects found', 'error'); return; }
+
+    setGenerating(true);
+    const termEnd = new Date(genTerm.end_date);
+    const weeks = parseInt(genForm.weeks_before) || 1;
+    const examStart = new Date(termEnd);
+    examStart.setDate(examStart.getDate() - weeks * 7);
+
+    const sessionName = `${genTerm.name} Exams`;
+    const { data: sessionData, error: sessionErr } = await supabase.from('exam_sessions').insert({
+      school_id: SCHOOL_ID,
+      name: sessionName,
+      academic_year_id: genTerm.academic_year_id,
+      term_id: genTerm.id,
+      start_date: examStart.toISOString().split('T')[0],
+      end_date: genTerm.end_date,
+      status: 'draft',
+      published: false,
+      created_by: profile?.user_id ?? null,
+    }).select().single();
+    if (sessionErr) { toast(sessionErr.message, 'error'); setGenerating(false); return; }
+
+    const sessionId = sessionData.id;
+    const examsToInsert: Record<string, unknown>[] = [];
+    const daysNeeded = classes.length * subjects.length;
+    const maxPerDay = 3;
+    const daysAvailable = Math.ceil(daysNeeded / maxPerDay);
+    const startTime = genForm.start_time || '09:00';
+    const dur = parseInt(genForm.duration_minutes) || 120;
+    const [sh, sm] = startTime.split(':').map(Number);
+    const startMinutes = sh * 60 + sm;
+    const slotsPerDay = [
+      { start: startMinutes, end: startMinutes + dur },
+      { start: startMinutes + dur + 30, end: startMinutes + dur * 2 + 30 },
+      { start: startMinutes + dur * 2 + 60, end: startMinutes + dur * 3 + 60 },
+    ];
+
+    let examIndex = 0;
+    for (const cls of classes) {
+      const classSubs = classSubjects.filter((cs: ClassSubject) => cs.class_id === cls.id);
+      const subs = classSubs.length > 0 ? classSubs.map((cs: ClassSubject) => subjects.find((s) => s.id === cs.subject_id)).filter(Boolean) as Subject[] : subjects;
+      for (const sub of subs) {
+        const dayOffset = Math.floor(examIndex / maxPerDay);
+        const slotIdx = examIndex % maxPerDay;
+        const examDate = new Date(examStart);
+        examDate.setDate(examStart.getDate() + dayOffset);
+        if (examDate > termEnd) examDate.setTime(termEnd.getTime() - 86400000);
+        const slot = slotsPerDay[slotIdx];
+        const fmtTime = (mins: number) => { const h = Math.floor(mins / 60); const m = mins % 60; return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
+        examsToInsert.push({
+          school_id: SCHOOL_ID,
+          exam_session_id: sessionId,
+          term_id: genTerm.id,
+          name: `${sub.name} — ${cls.name}`,
+          exam_type: genForm.exam_type,
+          class_id: cls.id,
+          subject_id: sub.id,
+          exam_date: examDate.toISOString().split('T')[0],
+          start_time: fmtTime(slot.start),
+          end_time: fmtTime(slot.end),
+          duration_minutes: dur,
+          teacher_id: classSubs.find((cs: ClassSubject) => cs.subject_id === sub.id)?.teacher_id ?? null,
+          total_marks: parseFloat(genForm.total_marks) || 100,
+          status: 'scheduled',
+        });
+        examIndex++;
+      }
+    }
+
+    const { error: examErr } = await supabase.from('exams').insert(examsToInsert);
+    setGenerating(false);
+    if (examErr) { toast(examErr.message, 'error'); return; }
+    toast(`Generated ${examsToInsert.length} exams across ${classes.length} classes`);
+    setGenerateModalOpen(false);
+    refresh();
+  };
 
   const filteredSessions = useMemo(() => {
     if (!search.trim()) return examSessions;
@@ -559,7 +667,12 @@ export function SchoolAdminExamSessions() {
         title="Exam Sessions"
         subtitle="Create exam sessions and manage the exam schedule"
         icon={<ClipboardList className="h-6 w-6" />}
-        action={<Button onClick={openAddSession} leftIcon={<Plus className="h-4 w-4" />}>Add Session</Button>}
+        action={
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={openGenerateModal} leftIcon={<Wand2 className="h-4 w-4" />}>Auto-Generate</Button>
+            <Button onClick={openAddSession} leftIcon={<Plus className="h-4 w-4" />}>Add Session</Button>
+          </div>
+        }
       />
 
       <Card>
@@ -628,6 +741,63 @@ export function SchoolAdminExamSessions() {
             </div>
           )}
         </form>
+      </Modal>
+
+      <Modal
+        open={generateModalOpen}
+        onClose={() => setGenerateModalOpen(false)}
+        title="Auto-Generate Exam Schedule"
+        description="Generate exams for every class and subject in the last weeks of a term"
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setGenerateModalOpen(false)}>Cancel</Button>
+            <Button loading={generating} onClick={runGenerate} leftIcon={<Wand2 className="h-4 w-4" />}>Generate</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Select label="Term *" value={genForm.term_id} onChange={(e) => setGenForm({ ...genForm, term_id: e.target.value })}>
+            <option value="">Select term</option>
+            {terms.map((t) => <option key={t.id} value={t.id}>{t.name} (ends {formatDate(t.end_date)})</option>)}
+          </Select>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select label="Weeks Before Term End" value={genForm.weeks_before} onChange={(e) => setGenForm({ ...genForm, weeks_before: e.target.value })}>
+              <option value="1">1 week before</option>
+              <option value="2">2 weeks before</option>
+              <option value="3">3 weeks before</option>
+            </Select>
+            <Select label="Exam Type" value={genForm.exam_type} onChange={(e) => setGenForm({ ...genForm, exam_type: e.target.value })}>
+              <option value="endterm">End Term</option>
+              <option value="midterm">Midterm</option>
+              <option value="final">Final</option>
+              <option value="quiz">Quiz</option>
+              <option value="assessment">Assessment</option>
+            </Select>
+            <Input label="Daily Start Time" type="time" value={genForm.start_time} onChange={(e) => setGenForm({ ...genForm, start_time: e.target.value })} />
+            <Input label="Duration (minutes)" type="number" value={genForm.duration_minutes} onChange={(e) => setGenForm({ ...genForm, duration_minutes: e.target.value })} />
+            <Input label="Total Marks" type="number" value={genForm.total_marks} onChange={(e) => setGenForm({ ...genForm, total_marks: e.target.value })} />
+          </div>
+          {genPreview ? (
+            <div className="rounded-lg border border-primary-200 bg-primary-50 dark:border-primary-500/20 dark:bg-primary-500/10 p-4">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-primary-600 dark:text-primary-light" />
+                <div className="text-sm text-primary-700 dark:text-primary-light">
+                  <p className="font-medium">Schedule Preview</p>
+                  <p className="mt-1">This will create <strong>{genPreview.count} exams</strong> across <strong>{classes.length} classes</strong> and <strong>{subjects.length} subjects</strong>.</p>
+                  <p className="mt-0.5">Exams will be scheduled from <strong>{formatDate(genPreview.startDate)}</strong> to <strong>{formatDate(genPreview.endDate)}</strong>, with up to 3 exams per day starting at {genForm.start_time}.</p>
+                </div>
+              </div>
+            </div>
+          ) : genTerm && !genTerm.end_date ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10 p-4">
+              <p className="text-sm text-amber-700 dark:text-amber-400">The selected term has no end date. Please set a term end date first.</p>
+            </div>
+          ) : null}
+          <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
+            <p className="text-xs text-ink-muted">A new exam session named after the term will be created in draft status. Each class gets an exam for every subject linked to it (or all school subjects if none are linked). You can edit individual exams afterward.</p>
+          </div>
+        </div>
       </Modal>
 
       <Modal
