@@ -40,9 +40,17 @@ import { ParentResults } from '@/pages/parent/ParentResults';
 import { ParentMessages } from '@/pages/parent/ParentMessages';
 import { ParentProfile } from '@/pages/parent/ParentProfile';
 
+function FullPageLoader() {
+  return (
+    <div className="flex min-h-screen items-center justify-center" style={{ background: '#0d1117' }}>
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" style={{ borderColor: '#3b82f6', borderTopColor: 'transparent' }} />
+    </div>
+  );
+}
+
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
   const { profile, loading } = useAuth();
-  if (loading) return <div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent" /></div>;
+  if (loading) return <FullPageLoader />;
   if (!profile) return <Navigate to="/login" replace />;
   if (!allowedRoles.includes(profile.role)) return <Navigate to="/" replace />;
   return <>{children}</>;
@@ -50,7 +58,7 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
 
 function RoleRedirect() {
   const { profile, loading } = useAuth();
-  if (loading) return <div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent" /></div>;
+  if (loading) return <FullPageLoader />;
   if (!profile) return <Navigate to="/login" replace />;
   const routes: Record<string, string> = { super_admin: '/super-admin', school_admin: '/school-admin', teacher: '/teacher', parent: '/parent' };
   return <Navigate to={routes[profile.role] ?? '/login'} replace />;
@@ -91,7 +99,7 @@ const parentNav: NavItem[] = [
 
 export default function App() {
   return (
-    <ThemeProvider>
+
       <ToastProvider>
         <AuthProvider>
           <AcademicProvider>
@@ -139,10 +147,5 @@ export default function App() {
           </AcademicProvider>
         </AuthProvider>
       </ToastProvider>
-    </ThemeProvider>
   );
-}
-
-function ThemeProvider({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
 }

@@ -1,16 +1,15 @@
 import type { ReactNode } from 'react';
-import { cn } from '@/lib/utils';
 
 export function Card({ children, className, hover }: { children: ReactNode; className?: string; hover?: boolean }) {
-  return <div className={cn('card p-5', hover && 'transition-shadow hover:shadow-md', className)}>{children}</div>;
+  return <div className={`card p-5 ${hover ? 'transition-shadow hover:shadow-lg' : ''} ${className ?? ''}`}>{children}</div>;
 }
 
 export function CardHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
   return (
     <div className="mb-4 flex items-start justify-between gap-3">
       <div>
-        <h3 className="font-semibold text-ink dark:text-slate-100">{title}</h3>
-        {subtitle && <p className="text-sm text-ink-muted mt-0.5">{subtitle}</p>}
+        <h3 className="font-semibold" style={{ color: '#e6edf3' }}>{title}</h3>
+        {subtitle && <p className="text-sm mt-0.5" style={{ color: '#5c7a9a' }}>{subtitle}</p>}
       </div>
       {action}
     </div>

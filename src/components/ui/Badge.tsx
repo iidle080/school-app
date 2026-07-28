@@ -3,14 +3,14 @@ import { cn } from '@/lib/utils';
 type Variant = 'primary' | 'secondary' | 'success' | 'warning' | 'error';
 
 export function Badge({ children, variant = 'secondary', className }: { children: React.ReactNode; variant?: Variant; className?: string }) {
-  const variants: Record<Variant, string> = {
-    primary: 'bg-primary-50 text-primary-700 dark:bg-primary-500/15 dark:text-primary-light',
-    secondary: 'bg-slate-100 text-ink-soft dark:bg-slate-800 dark:text-slate-300',
-    success: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400',
-    warning: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
-    error: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-400',
+  const styles: Record<Variant, React.CSSProperties> = {
+    primary: { background: 'rgba(59,130,246,0.15)', color: '#60a5fa' },
+    secondary: { background: 'rgba(160,179,198,0.15)', color: '#a0b3c6' },
+    success: { background: 'rgba(16,185,129,0.15)', color: '#34d399' },
+    warning: { background: 'rgba(245,158,11,0.15)', color: '#fbbf24' },
+    error: { background: 'rgba(248,113,113,0.15)', color: '#f87171' },
   };
-  return <span className={cn('inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium', variants[variant], className)}>{children}</span>;
+  return <span className={cn('badge', className)} style={styles[variant]}>{children}</span>;
 }
 
 export function statusBadge(status: string): { variant: Variant; label: string } {

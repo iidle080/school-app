@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { AppUser, School } from '@/types';
 
@@ -15,31 +16,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [school, setSchool] = useState<School | null>(null);
   const [loading, setLoading] = useState(true);
+  const loadingUid = useRef<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { if (mounted) setLoading(false); return; }
-      loadProfile(session.user.id, mounted);
-    });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) { setProfile(null); setSchool(null); setLoading(false); return; }
-      loadProfile(session.user.id, mounted);
+    async function loadProfile(uid: string) {
+      if (loadingUid.current === uid) return;
+      loadingUid.current = uid;
+
+      const { data: p } = await supabase.from('app_users').select('*').eq('user_id', uid).maybeSingle();
+      if (!mounted) return;
+      setProfile(p as AppUser | null);
+
+      if (p?.school_id) {
+        const { data: s } = await supabase.from('schools').select('*').eq('id', p.school_id).maybeSingle();
+        if (mounted) setSchool(s as School | null);
+      }
+      if (mounted) setLoading(false);
+    }
+
+    // Single source of truth: onAuthStateChange handles INITIAL_SESSION, SIGNED_IN, SIGNED_OUT
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session: Session | null) => {
+      if (!session) {
+        loadingUid.current = null;
+        setProfile(null);
+        setSchool(null);
+        setLoading(false);
+        return;
+      }
+      loadProfile(session.user.id);
     });
 
     return () => { mounted = false; subscription.unsubscribe(); };
-
-    async function loadProfile(uid: string, m: boolean) {
-      const { data: p } = await supabase.from('app_users').select('*').eq('user_id', uid).maybeSingle();
-      if (!m) return;
-      setProfile(p as AppUser | null);
-      if (p?.school_id) {
-        const { data: s } = await supabase.from('schools').select('*').eq('id', p.school_id).maybeSingle();
-        if (m) setSchool(s as School | null);
-      }
-      if (m) setLoading(false);
-    }
   }, []);
 
   const signOut = async () => { await supabase.auth.signOut(); };

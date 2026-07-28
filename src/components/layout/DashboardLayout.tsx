@@ -12,64 +12,100 @@ export interface NavItem {
 }
 
 export function DashboardLayout({ navItems, roleLabel }: { navItems: NavItem[]; roleLabel: string }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [userMenu, setUserMenu] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, school, signOut } = useAuth();
 
   const handleSignOut = async () => { await signOut(); navigate('/login'); };
 
-  return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      {/* Mobile sidebar overlay */}
-      {sidebarOpen && <div className="fixed inset-0 z-30 bg-slate-900/50 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+  const activeItem = navItems.find((n) => location.pathname === n.to || (n.to !== '/' && location.pathname.startsWith(n.to)));
 
-      {/* Sidebar */}
-      <aside className={cn(
-        'fixed inset-y-0 left-0 z-40 w-64 transform bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-transform lg:translate-x-0',
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      )}>
-        <div className="flex h-16 items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white font-bold text-sm">E</div>
-          <span className="font-bold text-ink dark:text-slate-100">EduBridge</span>
-        </div>
-        <div className="px-3 py-4">
-          <p className="px-3 text-xs font-medium uppercase tracking-wider text-ink-muted mb-2">{roleLabel}</p>
-          <nav className="space-y-1">
+  return (
+    <div className="min-h-screen" style={{ background: '#0d1117' }}>
+      {/* Top navigation bar */}
+      <header className="sticky top-0 z-40 border-b" style={{ borderColor: '#1e2d45', background: '#0d1117' }}>
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
+          {/* Left: logo + page title */}
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl text-white font-bold" style={{ background: '#3b82f6' }}>E</div>
+            <div className="hidden sm:block">
+              <p className="font-bold leading-none" style={{ color: '#e6edf3' }}>EduBridge</p>
+              <p className="text-xs mt-0.5" style={{ color: '#5c7a9a' }}>{school?.name ?? ''}</p>
+            </div>
+          </div>
+
+          {/* Center: nav (desktop) */}
+          <nav className="hidden lg:flex items-center gap-1">
             {navItems.map((item) => {
               const active = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to));
               return (
-                <Link key={item.to} to={item.to} onClick={() => setSidebarOpen(false)}
-                  className={cn('flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
-                    active ? 'bg-primary-50 text-primary-700 dark:bg-primary-500/15 dark:text-primary-light' : 'text-ink-soft hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800')}>
+                <Link key={item.to} to={item.to}
+                  className={cn('flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                    active ? 'text-white' : 'hover:text-white')}
+                  style={active ? { background: '#1a2236' } : { color: '#a0b3c6' }}>
                   {item.icon}
                   {item.label}
                 </Link>
               );
             })}
           </nav>
-        </div>
-        <div className="absolute bottom-0 left-0 right-0 border-t border-slate-200 dark:border-slate-800 p-3">
-          <div className="flex items-center gap-3 rounded-xl px-3 py-2">
-            <Avatar name={profile?.full_name ?? ''} src={profile?.avatar_url} size="sm" />
-            <div className="flex-1 min-w-0">
-              <p className="truncate text-sm font-medium text-ink dark:text-slate-100">{profile?.full_name}</p>
-              <p className="truncate text-xs text-ink-muted">{school?.name ?? ''}</p>
-            </div>
-            <button onClick={handleSignOut} className="rounded-lg p-1.5 text-ink-muted hover:bg-slate-100 dark:hover:bg-slate-800"><LogOut className="h-4 w-4" /></button>
+
+          {/* Right: user menu */}
+          <div className="relative">
+            <button onClick={() => setUserMenu((p) => !p)}
+              className="flex items-center gap-2 rounded-xl px-2 py-1.5 transition-colors hover:bg-[#1a2236]">
+              <Avatar name={profile?.full_name ?? ''} src={profile?.avatar_url} size="sm" />
+              <div className="hidden sm:block text-left">
+                <p className="text-sm font-medium leading-none" style={{ color: '#e6edf3' }}>{profile?.full_name}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#5c7a9a' }}>{roleLabel}</p>
+              </div>
+              <ChevronDown className="h-4 w-4" style={{ color: '#5c7a9a' }} />
+            </button>
+            {userMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setUserMenu(false)} />
+                <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border shadow-xl z-50 py-2"
+                  style={{ background: '#131929', borderColor: '#1e2d45' }}>
+                  <div className="px-4 py-2 border-b" style={{ borderColor: '#1e2d45' }}>
+                    <p className="text-sm font-medium" style={{ color: '#e6edf3' }}>{profile?.full_name}</p>
+                    <p className="text-xs" style={{ color: '#5c7a9a' }}>{profile?.phone ?? 'No phone'}</p>
+                  </div>
+                  <button onClick={handleSignOut}
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors hover:bg-[#1a2236]"
+                    style={{ color: '#f87171' }}>
+                    <LogOut className="h-4 w-4" /> Sign Out
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
-      </aside>
+
+        {/* Mobile nav row */}
+        <div className="lg:hidden border-t overflow-x-auto" style={{ borderColor: '#1e2d45' }}>
+          <div className="flex items-center gap-1 px-2 py-2 min-w-max">
+            {navItems.map((item) => {
+              const active = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to));
+              return (
+                <Link key={item.to} to={item.to}
+                  className={cn('flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
+                    active ? 'text-white' : 'hover:text-white')}
+                  style={active ? { background: '#1a2236' } : { color: '#a0b3c6' }}>
+                  {item.icon}
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      </header>
 
       {/* Main content */}
-      <div className="lg:pl-64">
-        {/* Mobile header */}
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-4 lg:hidden">
-          <button onClick={() => setSidebarOpen(true)} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><Menu className="h-5 w-5" /></button>
-          <span className="font-bold text-ink dark:text-slate-100">EduBridge</span>
-        </header>
-        <main className="p-4 lg:p-8 max-w-7xl mx-auto"><Outlet /></main>
-      </div>
+      <main className="mx-auto max-w-7xl p-4 lg:p-8">
+        <Outlet />
+      </main>
     </div>
   );
 }

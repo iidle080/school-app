@@ -19,9 +19,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="fixed bottom-4 right-4 z-[100] space-y-2">
         {toasts.map((t) => (
-          <div key={t.id} className={`rounded-xl px-4 py-3 text-sm font-medium shadow-lg animate-in slide-in-from-right ${
-            t.type === 'success' ? 'bg-emerald-600 text-white' : t.type === 'error' ? 'bg-rose-600 text-white' : 'bg-slate-800 text-white'
-          }`}>
+          <div key={t.id} className="rounded-xl px-4 py-3 text-sm font-medium shadow-lg"
+            style={{
+              background: t.type === 'success' ? '#059669' : t.type === 'error' ? '#dc2626' : '#253352',
+              color: '#fff',
+            }}>
             {t.message}
           </div>
         ))}
