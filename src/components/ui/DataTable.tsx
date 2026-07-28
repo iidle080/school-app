@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { Search } from 'lucide-react';
 import { EmptyState } from './EmptyState';
 
 export interface Column<T> {
@@ -28,17 +27,14 @@ export function DataTable<T>({ columns, data, rowKey, searchKeys, searchPlacehol
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left" style={{ borderColor: '#1e2d45', color: '#5c7a9a' }}>
+              <tr className="border-b border-surface-border text-left text-ink-muted">
                 {columns.map((c) => <th key={c.key} className="py-2 pr-4 font-medium">{c.header}</th>)}
               </tr>
             </thead>
-            <tbody className="divide-y" style={{ borderColor: 'rgba(30,45,69,0.5)' }}>
+            <tbody className="divide-y divide-surface-border">
               {data.map((row) => (
                 <tr key={rowKey(row)} onClick={() => onRowClick?.(row)}
-                  className={onRowClick ? 'cursor-pointer transition-colors' : ''}
-                  style={onRowClick ? { color: '#a0b3c6' } : { color: '#a0b3c6' }}
-                  onMouseEnter={(e) => onRowClick ? (e.currentTarget.style.background = '#1a2236') : {}}
-                  onMouseLeave={(e) => onRowClick ? (e.currentTarget.style.background = '') : {}}>
+                  className={onRowClick ? 'cursor-pointer transition-colors hover:bg-surface-overlay text-ink-soft' : 'text-ink-soft'}>
                   {columns.map((c) => <td key={c.key} className="py-2.5 pr-4">{c.render ? c.render(row) : (row as any)[c.key]}</td>)}
                 </tr>
               ))}

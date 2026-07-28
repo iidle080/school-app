@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { ThemeProvider } from '@/context/ThemeContext';
 import { AcademicProvider } from '@/context/AcademicContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { ParentProvider } from '@/context/ParentContext';
@@ -46,8 +47,8 @@ import { ParentProfile } from '@/pages/parent/ParentProfile';
 
 function FullPageLoader() {
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ background: '#0d1117' }}>
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" style={{ borderColor: '#3b82f6', borderTopColor: 'transparent' }} />
+    <div className="flex min-h-screen items-center justify-center bg-bg">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent border-primary" />
     </div>
   );
 }
@@ -108,6 +109,7 @@ const parentNav: NavItem[] = [
 
 export default function App() {
   return (
+      <ThemeProvider>
       <ToastProvider>
         <AuthProvider>
           <AcademicProvider>
@@ -160,5 +162,6 @@ export default function App() {
           </AcademicProvider>
         </AuthProvider>
       </ToastProvider>
+      </ThemeProvider>
   );
 }

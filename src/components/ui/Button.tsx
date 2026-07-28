@@ -21,17 +21,17 @@ export function Button({ children, onClick, type = 'button', variant = 'primary'
   const variants: Record<Variant, string> = {
     primary: 'btn-primary',
     secondary: 'btn-secondary',
-    success: 'text-white',
-    warning: 'text-white',
-    error: 'text-white',
+    success: 'btn-primary',
+    warning: 'btn-primary',
+    error: 'btn-primary',
     ghost: 'btn-ghost',
     danger: 'btn-danger',
   };
   const variantStyles: Record<Variant, React.CSSProperties> = {
     primary: {}, secondary: {}, ghost: {}, danger: {},
-    success: { background: '#059669' },
-    warning: { background: '#d97706' },
-    error: { background: '#dc2626' },
+    success: { background: 'var(--color-success)' },
+    warning: { background: 'var(--color-warning)' },
+    error: { background: 'var(--color-error)' },
   };
   const sizes: Record<Size, string> = { sm: 'px-3 py-1.5 text-xs', md: 'px-4 py-2.5 text-sm', lg: 'px-5 py-3 text-base' };
   return (

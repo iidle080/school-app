@@ -5,30 +5,47 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Brand / primary (blue)
-        primary: {
-          50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd',
-          400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8',
-          800: '#1e40af', 900: '#1e3a8a',
-          light: '#60a5fa', DEFAULT: '#3b82f6', dark: '#2563eb',
-        },
-        // Ink (text colors for dark theme)
-        ink: {
-          DEFAULT: '#e6edf3',
-          soft: '#a0b3c6',
-          muted: '#5c7a9a',
-        },
-        // Surface (dark backgrounds)
+        bg: 'var(--color-bg)',
         surface: {
-          DEFAULT: '#0d1117',
-          raised: '#131929',
-          overlay: '#1a2236',
-          border: '#1e2d45',
-          muted: '#253352',
+          DEFAULT: 'var(--color-surface)',
+          raised: 'var(--color-surface-raised)',
+          overlay: 'var(--color-surface-overlay)',
+          border: 'var(--color-border)',
+          muted: 'var(--color-border-muted)',
         },
-        brand: {
-          DEFAULT: '#3b82f6', dark: '#2563eb', light: '#60a5fa',
+        ink: {
+          DEFAULT: 'var(--color-text)',
+          soft: 'var(--color-text-soft)',
+          muted: 'var(--color-text-muted)',
         },
+        primary: {
+          DEFAULT: 'var(--color-primary)',
+          light: 'var(--color-primary-light)',
+          dark: 'var(--color-primary-dark)',
+          soft: 'var(--color-primary-soft)',
+          'soft-text': 'var(--color-primary-soft-text)',
+        },
+        success: {
+          DEFAULT: 'var(--color-success)',
+          soft: 'var(--color-success-soft)',
+          'soft-text': 'var(--color-success-soft-text)',
+        },
+        warning: {
+          DEFAULT: 'var(--color-warning)',
+          soft: 'var(--color-warning-soft)',
+          'soft-text': 'var(--color-warning-soft-text)',
+        },
+        error: {
+          DEFAULT: 'var(--color-error)',
+          soft: 'var(--color-error-soft)',
+          'soft-text': 'var(--color-error-soft-text)',
+        },
+        info: {
+          DEFAULT: 'var(--color-info)',
+          soft: 'var(--color-info-soft)',
+          'soft-text': 'var(--color-info-soft-text)',
+        },
+        skeleton: 'var(--color-skeleton)',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],

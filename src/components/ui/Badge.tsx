@@ -3,14 +3,14 @@ import { cn } from '@/lib/utils';
 type Variant = 'primary' | 'secondary' | 'success' | 'warning' | 'error';
 
 export function Badge({ children, variant = 'secondary', className }: { children: React.ReactNode; variant?: Variant; className?: string }) {
-  const styles: Record<Variant, React.CSSProperties> = {
-    primary: { background: 'rgba(59,130,246,0.15)', color: '#60a5fa' },
-    secondary: { background: 'rgba(160,179,198,0.15)', color: '#a0b3c6' },
-    success: { background: 'rgba(16,185,129,0.15)', color: '#34d399' },
-    warning: { background: 'rgba(245,158,11,0.15)', color: '#fbbf24' },
-    error: { background: 'rgba(248,113,113,0.15)', color: '#f87171' },
+  const styles: Record<Variant, string> = {
+    primary: 'bg-primary-soft text-primary-soft-text',
+    secondary: 'bg-surface-overlay text-ink-soft',
+    success: 'bg-success-soft text-success-soft-text',
+    warning: 'bg-warning-soft text-warning-soft-text',
+    error: 'bg-error-soft text-error-soft-text',
   };
-  return <span className={cn('badge', className)} style={styles[variant]}>{children}</span>;
+  return <span className={cn('badge', styles[variant], className)}>{children}</span>;
 }
 
 export function statusBadge(status: string): { variant: Variant; label: string } {

@@ -45,10 +45,10 @@ export function SuperAdminDashboard() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Total Schools" value={schools.length} icon={<Building2 className="h-6 w-6" />} accent="rgba(59,130,246,0.15)" />
-          <StatCard label="Total Users" value={totalUsers} icon={<Users className="h-6 w-6" />} accent="rgba(16,185,129,0.15)" />
-          <StatCard label="Total Students" value={totalStudents} icon={<GraduationCap className="h-6 w-6" />} accent="rgba(245,158,11,0.15)" />
-          <StatCard label="Active Schools" value={schools.filter((s) => s.status === 'active').length} icon={<Building2 className="h-6 w-6" />} accent="rgba(14,165,233,0.15)" />
+          <StatCard label="Total Schools" value={schools.length} icon={<Building2 className="h-6 w-6 text-primary-light" />} accent="bg-primary-soft" />
+          <StatCard label="Total Users" value={totalUsers} icon={<Users className="h-6 w-6 text-success-soft-text" />} accent="bg-success-soft" />
+          <StatCard label="Total Students" value={totalStudents} icon={<GraduationCap className="h-6 w-6 text-warning-soft-text" />} accent="bg-warning-soft" />
+          <StatCard label="Active Schools" value={schools.filter((s) => s.status === 'active').length} icon={<Building2 className="h-6 w-6 text-info-soft-text" />} accent="bg-info-soft" />
         </div>
       )}
 
@@ -63,9 +63,9 @@ export function SuperAdminDashboard() {
             {schools.map((s) => {
               const b = statusBadge(s.status);
               return (
-                <div key={s.id} className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: '#1a2236' }}>
+                <div key={s.id} className="flex items-center justify-between rounded-xl bg-surface-overlay px-3 py-2.5">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-soft text-primary-light">
                       <Building2 className="h-5 w-5" />
                     </div>
                     <div>
