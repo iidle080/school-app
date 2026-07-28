@@ -1,25 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-
-export interface AcademicYear {
-  id: string;
-  school_id: string;
-  name: string;
-  start_date: string;
-  end_date: string;
-  is_active: boolean;
-}
-
-export interface Term {
-  id: string;
-  school_id: string;
-  academic_year_id: string;
-  name: string;
-  start_date: string;
-  end_date: string;
-  is_active: boolean;
-}
+import type { AcademicYear, Term } from '@/types';
 
 interface AcademicContextValue {
   years: AcademicYear[];
@@ -29,9 +11,8 @@ interface AcademicContextValue {
   setYear: (id: string) => void;
   setTerm: (id: string) => void;
   loading: boolean;
+  refresh: () => void;
 }
-
-import { createContext, useContext } from 'react';
 
 const AcademicContext = createContext<AcademicContextValue | undefined>(undefined);
 
@@ -43,16 +24,16 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const [selectedTermId, setSelectedTermId] = useState('');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!profile?.school_id) { setLoading(false); return; }
+    setLoading(true);
     Promise.all([
       supabase.from('academic_years').select('*').eq('school_id', profile.school_id).order('name'),
       supabase.from('terms').select('*').eq('school_id', profile.school_id).order('name'),
     ]).then(([y, t]) => {
       const yrs = (y.data as AcademicYear[]) ?? [];
       const tms = (t.data as Term[]) ?? [];
-      setYears(yrs);
-      setTerms(tms);
+      setYears(yrs); setTerms(tms);
       const activeYr = yrs.find((y) => y.is_active) ?? yrs[0];
       if (activeYr) {
         setSelectedYearId(activeYr.id);
@@ -63,6 +44,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     });
   }, [profile?.school_id]);
 
+  useEffect(() => { load(); }, [load]);
+
   const setYear = (id: string) => {
     setSelectedYearId(id);
     const yrTerms = terms.filter((t) => t.academic_year_id === id);
@@ -71,13 +54,13 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AcademicContext.Provider value={{ years, terms, selectedYearId, selectedTermId, setYear, setTerm: setSelectedTermId, loading }}>
+    <AcademicContext.Provider value={{ years, terms, selectedYearId, selectedTermId, setYear, setTerm: setSelectedTermId, loading, refresh: load }}>
       {children}
     </AcademicContext.Provider>
   );
 }
 
-export function useAcademic(): AcademicContextValue {
+export function useAcademic() {
   const ctx = useContext(AcademicContext);
   if (!ctx) throw new Error('useAcademic must be used within AcademicProvider');
   return ctx;

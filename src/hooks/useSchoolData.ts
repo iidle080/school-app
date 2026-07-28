@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { Student, ClassRow, Subject, AppUser, ClassSubject, ExamSession } from '@/types';
@@ -26,11 +26,8 @@ export function useSchoolData(): SchoolData {
   const [examSessions, setExamSessions] = useState<ExamSession[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = () => {
-    if (!profile?.school_id) {
-      setLoading(false);
-      return;
-    }
+  const load = useCallback(() => {
+    if (!profile?.school_id) { setLoading(false); return; }
     const sid = profile.school_id;
     setLoading(true);
     Promise.all([
@@ -51,9 +48,9 @@ export function useSchoolData(): SchoolData {
       setExamSessions((es.data as ExamSession[]) ?? []);
       setLoading(false);
     });
-  };
+  }, [profile?.school_id]);
 
-  useEffect(load, [profile?.school_id]);
+  useEffect(() => { load(); }, [load]);
 
   return { students, teachers, parents, classes, subjects, classSubjects, examSessions, loading, refresh: load };
 }

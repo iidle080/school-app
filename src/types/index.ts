@@ -1,33 +1,5 @@
 export type UserRole = 'super_admin' | 'school_admin' | 'teacher' | 'parent';
 
-export type SchoolStatus = 'pending' | 'active' | 'suspended' | 'expired';
-
-export type InvitationStatus = 'pending' | 'accepted' | 'expired' | 'cancelled';
-
-export type InvitationRole = 'school_admin' | 'teacher' | 'parent';
-
-export type EnrollmentStatus = 'active' | 'transferred' | 'graduated' | 'suspended' | 'inactive';
-
-export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';
-
-export type Plan = 'starter' | 'growth' | 'enterprise';
-
-export type SubscriptionStatus = 'trial' | 'active' | 'past_due' | 'cancelled' | 'suspended';
-
-export type Audience = 'school' | 'class' | 'staff' | 'emergency';
-
-export type EventType = 'event' | 'exam' | 'meeting' | 'holiday' | 'sports' | 'deadline';
-
-export type NotificationType =
-  | 'attendance'
-  | 'homework'
-  | 'announcement'
-  | 'message'
-  | 'exam_result'
-  | 'calendar'
-  | 'invitation'
-  | 'system';
-
 export interface AppUser {
   id: string;
   user_id: string;
@@ -39,6 +11,21 @@ export interface AppUser {
   active: boolean;
   created_at: string;
   updated_at: string;
+  // Extended profile fields
+  address?: string | null;
+  gender?: string | null;
+  date_of_birth?: string | null;
+  nationality?: string | null;
+  national_id?: string | null;
+  medical_history?: string | null;
+  qualification?: string | null;
+  department?: string | null;
+  employment_date?: string | null;
+  employment_status?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  id_card_url?: string | null;
+  certificates?: any[];
 }
 
 export interface School {
@@ -52,42 +39,7 @@ export interface School {
   admin_name: string | null;
   admin_email: string | null;
   admin_phone: string | null;
-  status: SchoolStatus;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Subscription {
-  id: string;
-  school_id: string;
-  plan: Plan;
-  status: SubscriptionStatus;
-  seats: number;
-  student_limit: number | null;
-  billing_cycle: 'monthly' | 'annual';
-  amount: number;
-  currency: string;
-  trial_ends_at: string | null;
-  renews_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Invitation {
-  id: string;
-  school_id: string | null;
-  token: string;
-  role: InvitationRole;
-  email: string | null;
-  phone: string | null;
-  full_name: string | null;
-  status: InvitationStatus;
-  channel: 'email' | 'sms';
-  metadata: Record<string, unknown>;
-  expires_at: string;
-  accepted_at: string | null;
-  accepted_by: string | null;
-  created_by: string;
+  status: string;
   created_at: string;
   updated_at: string;
 }
@@ -98,16 +50,19 @@ export interface Student {
   admission_number: string;
   full_name: string;
   photo_url: string | null;
-  gender: 'male' | 'female' | 'other' | null;
+  gender: string | null;
   date_of_birth: string | null;
   class_id: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   medical_notes: string | null;
-  enrollment_status: EnrollmentStatus;
+  enrollment_status: string;
   admitted_at: string | null;
   created_at: string;
   updated_at: string;
+  address?: string | null;
+  nationality?: string | null;
+  phone_number?: string | null;
 }
 
 export interface ClassRow {
@@ -118,7 +73,7 @@ export interface ClassRow {
   grade_level: string | null;
   stream: string | null;
   class_teacher_id: string | null;
-  capacity: number;
+  capacity: number | null;
   created_at: string;
 }
 
@@ -130,6 +85,15 @@ export interface Subject {
   created_at: string;
 }
 
+export interface ClassSubject {
+  id: string;
+  school_id: string;
+  class_id: string;
+  subject_id: string;
+  teacher_id: string | null;
+  created_at: string;
+}
+
 export interface AcademicYear {
   id: string;
   school_id: string;
@@ -137,6 +101,7 @@ export interface AcademicYear {
   start_date: string;
   end_date: string;
   is_active: boolean;
+  archived: boolean;
   created_at: string;
 }
 
@@ -151,29 +116,18 @@ export interface Term {
   created_at: string;
 }
 
-export interface Attendance {
+export interface ExamSession {
   id: string;
   school_id: string;
-  student_id: string;
-  class_id: string | null;
-  date: string;
-  session: 'morning' | 'afternoon';
-  status: AttendanceStatus;
-  notes: string | null;
-  marked_by: string | null;
-  created_at: string;
-}
-
-export interface Homework {
-  id: string;
-  school_id: string;
-  class_id: string;
-  subject_id: string | null;
-  teacher_id: string;
-  title: string;
-  description: string | null;
-  attachments: Array<{ name: string; url: string }>;
-  due_date: string;
+  academic_year_id: string | null;
+  term_id: string | null;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  status: string;
+  published: boolean;
+  published_at: string | null;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -187,7 +141,7 @@ export interface Exam {
   exam_type: string;
   start_date: string | null;
   end_date: string | null;
-  status: 'draft' | 'scheduled' | 'completed' | 'published';
+  status: string;
   class_id: string | null;
   subject_id: string | null;
   exam_date: string | null;
@@ -214,52 +168,20 @@ export interface ExamMark {
   entered_by: string | null;
   created_at: string;
   updated_at: string;
+  position?: number | null;
+  remarks?: string | null;
 }
 
-export interface ReportCard {
+export interface Attendance {
   id: string;
   school_id: string;
   student_id: string;
-  term_id: string | null;
-  academic_year_id: string | null;
-  title: string;
-  summary: string | null;
-  overall_grade: string | null;
-  overall_marks: number | null;
-  class_position: number | null;
-  teacher_remarks: string | null;
-  principal_remarks: string | null;
-  published: boolean;
-  published_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Announcement {
-  id: string;
-  school_id: string;
-  author_id: string;
-  title: string;
-  body: string;
-  audience: Audience;
   class_id: string | null;
-  scheduled_at: string | null;
-  published_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CalendarEvent {
-  id: string;
-  school_id: string;
-  title: string;
-  description: string | null;
-  event_type: EventType;
-  start_at: string;
-  end_at: string | null;
-  location: string | null;
-  class_id: string | null;
-  created_by: string | null;
+  date: string;
+  session: 'morning' | 'afternoon';
+  status: string;
+  notes: string | null;
+  marked_by: string | null;
   created_at: string;
 }
 
@@ -270,75 +192,38 @@ export interface Message {
   recipient_id: string;
   subject: string | null;
   body: string;
-  attachments: Array<{ name: string; url: string }>;
+  attachments: any[];
   read_at: string | null;
   parent_message_id: string | null;
   conversation_id: string | null;
-  message_type: 'text' | 'image' | 'document' | 'system';
+  message_type: string;
   attachment_url: string | null;
   attachment_name: string | null;
   is_typing: string | null;
   created_at: string;
 }
 
-export interface Notification {
+export interface Homework {
   id: string;
-  school_id: string | null;
-  user_id: string;
-  type: NotificationType;
+  school_id: string;
+  class_id: string;
+  subject_id: string | null;
+  teacher_id: string;
   title: string;
-  body: string | null;
-  link: string | null;
-  read_at: string | null;
+  description: string | null;
+  attachments: any[];
+  due_date: string;
   created_at: string;
+  updated_at: string;
 }
-
-export type Relationship = 'father' | 'mother' | 'guardian' | 'aunt' | 'uncle' | 'other';
 
 export interface StudentParent {
   id: string;
   school_id: string;
   student_id: string;
   parent_user_id: string;
-  relationship: Relationship;
+  relationship: string;
   is_primary_guardian: boolean;
   created_at: string;
   updated_at: string;
-}
-
-export interface ExamSession {
-  id: string;
-  school_id: string;
-  academic_year_id: string | null;
-  term_id: string | null;
-  name: string;
-  start_date: string | null;
-  end_date: string | null;
-  status: 'draft' | 'scheduled' | 'completed' | 'published';
-  published: boolean;
-  published_at: string | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ClassSubject {
-  id: string;
-  school_id: string;
-  class_id: string;
-  subject_id: string;
-  teacher_id: string | null;
-  created_at: string;
-}
-
-export interface AuditLog {
-  id: string;
-  school_id: string | null;
-  actor_id: string | null;
-  actor_role: string | null;
-  action: string;
-  entity: string | null;
-  entity_id: string | null;
-  detail: Record<string, unknown>;
-  created_at: string;
 }

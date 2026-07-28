@@ -1,43 +1,37 @@
-import { forwardRef, type ButtonHTMLAttributes } from 'react';
-import { Loader2 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type Variant = 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+interface ButtonProps {
+  children: ReactNode;
+  onClick?: () => void;
+  type?: 'button' | 'submit' | 'reset';
   variant?: Variant;
   size?: Size;
   loading?: boolean;
-  leftIcon?: React.ReactNode;
-  rightIcon?: React.ReactNode;
+  disabled?: boolean;
+  leftIcon?: ReactNode;
+  className?: string;
+  form?: string;
 }
 
-const VARIANT_CLASSES: Record<Variant, string> = {
-  primary: 'btn-primary',
-  secondary: 'btn-secondary',
-  ghost: 'btn-ghost',
-  danger: 'btn-danger',
-};
-
-const SIZE_CLASSES: Record<Size, string> = {
-  sm: 'btn-sm',
-  md: '',
-  lg: 'btn-lg',
-};
-
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'primary', size = 'md', loading, leftIcon, rightIcon, className, children, disabled, ...props }, ref) => (
-    <button
-      ref={ref}
-      className={cn(VARIANT_CLASSES[variant], SIZE_CLASSES[size], className)}
-      disabled={disabled || loading}
-      {...props}
-    >
-      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : leftIcon}
+export function Button({ children, onClick, type = 'button', variant = 'primary', size = 'md', loading, disabled, leftIcon, className, form }: ButtonProps) {
+  const variants: Record<Variant, string> = {
+    primary: 'btn-primary',
+    secondary: 'btn-secondary',
+    success: 'bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500 shadow-sm',
+    warning: 'bg-amber-500 text-white hover:bg-amber-600 focus:ring-amber-400 shadow-sm',
+    error: 'bg-rose-600 text-white hover:bg-rose-700 focus:ring-rose-500 shadow-sm',
+    ghost: 'btn-ghost',
+    danger: 'btn-danger',
+  };
+  const sizes: Record<Size, string> = { sm: 'px-3 py-1.5 text-xs', md: 'px-4 py-2.5 text-sm', lg: 'px-5 py-3 text-base' };
+  return (
+    <button type={type} onClick={onClick} disabled={disabled || loading} form={form} className={cn('btn', variants[variant], sizes[size], className)}>
+      {loading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : leftIcon}
       {children}
-      {!loading && rightIcon}
     </button>
-  ),
-);
-Button.displayName = 'Button';
+  );
+}

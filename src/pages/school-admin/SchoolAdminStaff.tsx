@@ -1,77 +1,418 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Plus, Pencil, Send, Copy, Check, Phone, Mail, X, RotateCw, Ban, Search, UserPlus } from 'lucide-react';
+import { useState, useMemo, type FormEvent } from 'react';
+import { UserCog, Plus, Pencil, Trash2, Upload, Search, Mail, Phone, Building2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { useToast } from '@/context/ToastContext';
 import { useSchoolData } from '@/hooks/useSchoolData';
+import { useToast } from '@/context/ToastContext';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input, Select } from '@/components/ui/Form';
+import { Input, Select, Textarea } from '@/components/ui/Form';
 import { Modal } from '@/components/ui/Modal';
 import { Badge, statusBadge } from '@/components/ui/Badge';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Avatar } from '@/components/ui/Avatar';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { RowSkeleton } from '@/components/ui/Spinner';
-import { generateToken, daysFromNow, formatDate, relativeTime } from '@/lib/utils';
-import { INVITATION_EXPIRY_DAYS, DEMO_MODE, DEMO_PASSWORD } from '@/lib/constants';
-import { demoEmailFor, schoolSlugFromName, createDemoUser, type DemoCredentials } from '@/lib/demo';
-import { DemoCredentialsCard } from '@/components/demo/DemoUI';
-import { useSchool } from '@/hooks/useSchool';
-import type { AppUser, Invitation, ClassRow, Student } from '@/types';
-import type { UserRole } from '@/types';
+import { uploadFile, cn } from '@/lib/utils';
+import type { AppUser, Subject, ClassRow } from '@/types';
 
-// Shared staff-management page used for Teachers and Parents.
-export function StaffManagement({ role }: { role: 'teacher' | 'parent' }) {
-  const { user, profile } = useAuth();
+const SCHOOL_ID = 'ddccbf60-353f-40c5-a83f-3f8cf84eccfb';
+const DEFAULT_PASSWORD = 'Password123!';
+
+interface TeacherFormState {
+  full_name: string;
+  email: string;
+  phone: string;
+  address: string;
+  national_id: string;
+  nationality: string;
+  gender: string;
+  date_of_birth: string;
+  medical_history: string;
+  qualification: string;
+  department: string;
+  employment_date: string;
+  employment_status: string;
+  emergency_contact_name: string;
+  emergency_contact_phone: string;
+  subject_ids: string[];
+  class_ids: string[];
+}
+
+const emptyForm: TeacherFormState = {
+  full_name: '',
+  email: '',
+  phone: '',
+  address: '',
+  national_id: '',
+  nationality: '',
+  gender: '',
+  date_of_birth: '',
+  medical_history: '',
+  qualification: '',
+  department: '',
+  employment_date: '',
+  employment_status: 'active',
+  emergency_contact_name: '',
+  emergency_contact_phone: '',
+  subject_ids: [],
+  class_ids: [],
+};
+
+export function SchoolAdminStaff() {
+  const { profile } = useAuth();
+  const { teachers, subjects, classes, classSubjects, loading, refresh } = useSchoolData();
   const { toast } = useToast();
-  const { teachers, parents, students, classes, loading, refresh } = useSchoolData();
-  const { school } = useSchool();
-  const isTeacher = role === 'teacher';
-  const list = isTeacher ? teachers : parents;
 
-  const [showForm, setShowForm] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AppUser | null>(null);
-  const [showInvite, setShowInvite] = useState<AppUser | null>(null);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [copied, setCopied] = useState(false);
-  const [demoCreds, setDemoCreds] = useState<DemoCredentials | null>(null);
-  const [editingLinks, setEditingLinks] = useState<AppUser | null>(null);
+  const [form, setForm] = useState<TeacherFormState>(emptyForm);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [idCardFile, setIdCardFile] = useState<File | null>(null);
+  const [certificateFiles, setCertificateFiles] = useState<File[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<AppUser | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [credentialsModal, setCredentialsModal] = useState<{ email: string; password: string } | null>(null);
 
-  const loadInvites = async () => {
-    if (!profile?.school_id) return;
-    const { data } = await supabase.from('invitations').select('*').eq('school_id', profile.school_id).eq('role', role).order('created_at', { ascending: false });
-    setInvitations((data as Invitation[]) ?? []);
+  const subjectMap = useMemo(() => {
+    const map: Record<string, Subject> = {};
+    subjects.forEach((s) => { map[s.id] = s; });
+    return map;
+  }, [subjects]);
+
+  const classMap = useMemo(() => {
+    const map: Record<string, ClassRow> = {};
+    classes.forEach((c) => { map[c.id] = c; });
+    return map;
+  }, [classes]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return teachers;
+    const q = search.toLowerCase();
+    return teachers.filter((t) =>
+      t.full_name.toLowerCase().includes(q) ||
+      (t.phone ?? '').toLowerCase().includes(q) ||
+      (t.department ?? '').toLowerCase().includes(q) ||
+      (t.employment_status ?? '').toLowerCase().includes(q)
+    );
+  }, [teachers, search]);
+
+  const openAdd = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setIdCardFile(null);
+    setCertificateFiles([]);
+    setModalOpen(true);
   };
-  useEffect(() => { loadInvites(); }, [profile?.school_id, role]);
 
-  const pendingInvite = (userId: string) => invitations.find((i) => i.email === list.find((u) => u.id === userId)?.user_id);
+  const openEdit = (t: AppUser) => {
+    setEditing(t);
+    // Load existing subject/class assignments
+    const tSubjectIds = classSubjects.filter((cs) => cs.teacher_id === t.id).map((cs) => cs.subject_id);
+    const tClassIds = classSubjects.filter((cs) => cs.teacher_id === t.id).map((cs) => cs.class_id);
+    setForm({
+      full_name: t.full_name,
+      email: '',
+      phone: t.phone ?? '',
+      address: t.address ?? '',
+      national_id: t.national_id ?? '',
+      nationality: t.nationality ?? '',
+      gender: t.gender ?? '',
+      date_of_birth: t.date_of_birth ?? '',
+      medical_history: t.medical_history ?? '',
+      qualification: t.qualification ?? '',
+      department: t.department ?? '',
+      employment_date: t.employment_date ?? '',
+      employment_status: t.employment_status ?? 'active',
+      emergency_contact_name: t.emergency_contact_name ?? '',
+      emergency_contact_phone: t.emergency_contact_phone ?? '',
+      subject_ids: tSubjectIds,
+      class_ids: tClassIds,
+    });
+    setAvatarFile(null);
+    setAvatarPreview(t.avatar_url);
+    setIdCardFile(null);
+    setCertificateFiles([]);
+    setModalOpen(true);
+  };
+
+  const onAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const onIdCardChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) setIdCardFile(file);
+  };
+
+  const onCertificatesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) setCertificateFiles(Array.from(files));
+  };
+
+  const toggleSubject = (id: string) => {
+    setForm((f) => ({
+      ...f,
+      subject_ids: f.subject_ids.includes(id) ? f.subject_ids.filter((x) => x !== id) : [...f.subject_ids, id],
+    }));
+  };
+
+  const toggleClass = (id: string) => {
+    setForm((f) => ({
+      ...f,
+      class_ids: f.class_ids.includes(id) ? f.class_ids.filter((x) => x !== id) : [...f.class_ids, id],
+    }));
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!form.full_name.trim()) {
+      toast('Full name is required', 'error');
+      return;
+    }
+    if (!editing && !form.email.trim()) {
+      toast('Email is required for new teachers', 'error');
+      return;
+    }
+
+    setSaving(true);
+
+    // Upload avatar
+    let avatarUrl = editing?.avatar_url ?? null;
+    if (avatarFile) {
+      const ext = avatarFile.name.split('.').pop();
+      const path = `${SCHOOL_ID}/avatars/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const url = await uploadFile('teacher-photos', path, avatarFile);
+      if (url) avatarUrl = url;
+    }
+
+    // Upload ID card
+    let idCardUrl = editing?.id_card_url ?? null;
+    if (idCardFile) {
+      const ext = idCardFile.name.split('.').pop();
+      const path = `${SCHOOL_ID}/id-cards/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const url = await uploadFile('teacher-documents', path, idCardFile);
+      if (url) idCardUrl = url;
+    }
+
+    // Upload certificates
+    let certificates = editing?.certificates ?? [];
+    if (certificateFiles.length > 0) {
+      const uploaded: any[] = [];
+      for (const file of certificateFiles) {
+        const ext = file.name.split('.').pop();
+        const path = `${SCHOOL_ID}/certificates/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const url = await uploadFile('teacher-documents', path, file);
+        if (url) uploaded.push({ name: file.name, url });
+      }
+      certificates = [...certificates, ...uploaded];
+    }
+
+    const payload = {
+      school_id: SCHOOL_ID,
+      role: 'teacher' as const,
+      full_name: form.full_name.trim(),
+      phone: form.phone || null,
+      address: form.address || null,
+      national_id: form.national_id || null,
+      nationality: form.nationality || null,
+      gender: form.gender || null,
+      date_of_birth: form.date_of_birth || null,
+      medical_history: form.medical_history || null,
+      qualification: form.qualification || null,
+      department: form.department || null,
+      employment_date: form.employment_date || null,
+      employment_status: form.employment_status || 'active',
+      emergency_contact_name: form.emergency_contact_name || null,
+      emergency_contact_phone: form.emergency_contact_phone || null,
+      avatar_url: avatarUrl,
+      id_card_url: idCardUrl,
+      certificates,
+      active: true,
+    };
+
+    if (editing) {
+      const { error } = await supabase.from('app_users').update(payload).eq('id', editing.id);
+      if (error) {
+        toast(error.message, 'error');
+        setSaving(false);
+        return;
+      }
+
+      // Update class_subjects: remove old, insert new
+      await supabase.from('class_subjects').delete().eq('teacher_id', editing.id);
+
+      // Insert new assignments
+      if (form.subject_ids.length > 0 && form.class_ids.length > 0) {
+        const assignments: any[] = [];
+        for (const classId of form.class_ids) {
+          for (const subjectId of form.subject_ids) {
+            assignments.push({
+              school_id: SCHOOL_ID,
+              class_id: classId,
+              subject_id: subjectId,
+              teacher_id: editing.id,
+            });
+          }
+        }
+        if (assignments.length > 0) {
+          await supabase.from('class_subjects').insert(assignments);
+        }
+      }
+
+      toast('Teacher updated successfully');
+    } else {
+      // Create auth user via edge function (so admin session is not affected)
+      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/demo-create-user`;
+      const fnRes = await fetch(fnUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+        },
+        body: JSON.stringify({
+          email: form.email.trim(),
+          password: DEFAULT_PASSWORD,
+          fullName: form.full_name.trim(),
+          phone: form.phone || null,
+          schoolId: SCHOOL_ID,
+          role: 'teacher',
+        }),
+      });
+
+      let userId: string;
+      let profileId: string | null = null;
+
+      if (!fnRes.ok) {
+        const err = await fnRes.json().catch(() => ({ error: 'Failed to create user' }));
+        toast(`Error: ${err.error}`, 'error');
+        setSaving(false);
+        return;
+      }
+
+      const fnData = await fnRes.json();
+      userId = fnData.userId;
+      profileId = fnData.profileId;
+
+      // Update the app_users record with extended profile fields
+      if (profileId) {
+        await supabase.from('app_users').update({
+          gender: form.gender || null,
+          date_of_birth: form.date_of_birth || null,
+          nationality: form.nationality || null,
+          national_id: form.national_id || null,
+          address: form.address || null,
+          medical_history: form.medical_history || null,
+          qualification: form.qualification || null,
+          department: form.department || null,
+          employment_date: form.employment_date || null,
+          employment_status: form.employment_status || 'active',
+          emergency_contact_name: form.emergency_contact_name || null,
+          emergency_contact_phone: form.emergency_contact_phone || null,
+          avatar_url: avatarPreview,
+          id_card_url: idCardFile ? await uploadFile('teacher-documents', `id-cards/${userId}-${idCardFile.name}`, idCardFile) : null,
+        }).eq('id', profileId);
+      }
+
+      // Insert class_subjects assignments
+      if (form.subject_ids.length > 0 && form.class_ids.length > 0) {
+        const assignments: any[] = [];
+        for (const classId of form.class_ids) {
+          for (const subjectId of form.subject_ids) {
+            assignments.push({
+              school_id: SCHOOL_ID,
+              class_id: classId,
+              subject_id: subjectId,
+              teacher_id: userId,
+            });
+          }
+        }
+        if (assignments.length > 0) {
+          await supabase.from('class_subjects').insert(assignments);
+        }
+      }
+
+      toast('Teacher added successfully');
+      setCredentialsModal({ email: form.email.trim(), password: DEFAULT_PASSWORD });
+    }
+
+    setSaving(false);
+    setModalOpen(false);
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setIdCardFile(null);
+    setCertificateFiles([]);
+    refresh();
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    // Remove class_subjects assignments
+    await supabase.from('class_subjects').delete().eq('teacher_id', deleteTarget.id);
+    const { error } = await supabase.from('app_users').delete().eq('id', deleteTarget.id);
+    setDeleting(false);
+    if (error) {
+      toast(error.message, 'error');
+      return;
+    }
+    toast('Teacher deleted');
+    setDeleteTarget(null);
+    refresh();
+  };
 
   const columns: Column<AppUser>[] = [
     {
-      key: 'name', header: 'Name',
-      render: (u) => (
+      key: 'full_name',
+      header: 'Teacher',
+      render: (t) => (
         <div className="flex items-center gap-3">
-          <Avatar name={u.full_name} src={u.avatar_url} size="sm" />
+          <Avatar name={t.full_name} src={t.avatar_url} size="sm" />
           <div>
-            <p className="font-medium text-ink dark:text-slate-100">{u.full_name}</p>
-            <p className="text-xs text-ink-muted">{u.phone ?? 'No phone'}</p>
+            <p className="font-medium text-ink dark:text-slate-100">{t.full_name}</p>
+            <p className="text-xs text-ink-muted">{t.qualification ?? '—'}</p>
           </div>
         </div>
       ),
     },
-    { key: 'status', header: 'Status', render: (u) => u.active ? <Badge variant="success">Active</Badge> : <Badge variant="neutral">Disabled</Badge> },
-    { key: 'joined', header: 'Joined', render: (u) => <span className="text-xs text-ink-muted">{formatDate(u.created_at)}</span> },
     {
-      key: 'actions', header: '',
-      render: (u) => (
-        <div className="flex gap-2 justify-end">
-          <Button size="sm" variant="ghost" onClick={() => { setEditing(u); setShowForm(true); }} leftIcon={<Pencil className="h-3.5 w-3.5" />}>Edit</Button>
-          {!isTeacher && <Button size="sm" variant="secondary" onClick={() => setEditingLinks(u)} leftIcon={<UserPlus className="h-3.5 w-3.5" />}>Children</Button>}
-          <Button size="sm" variant="secondary" onClick={() => { setShowInvite(u); const inv = pendingInvite(u.id); setInviteLink(inv ? `${window.location.origin}/invite/${inv.token}` : null); }}>
-            Invite
-          </Button>
+      key: 'phone',
+      header: 'Phone',
+      render: (t) => <span className="text-ink-soft dark:text-slate-300">{t.phone ?? '—'}</span>,
+    },
+    {
+      key: 'department',
+      header: 'Department',
+      render: (t) => <span className="text-ink-soft dark:text-slate-300">{t.department ?? '—'}</span>,
+    },
+    {
+      key: 'employment_status',
+      header: 'Status',
+      render: (t) => {
+        const b = statusBadge(t.employment_status ?? 'active');
+        return <Badge variant={b.variant}>{b.label}</Badge>;
+      },
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: (t) => (
+        <div className="flex items-center justify-end gap-1">
+          <button onClick={() => openEdit(t)} className="rounded-lg p-1.5 text-ink-muted hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800">
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button onClick={() => setDeleteTarget(t)} className="rounded-lg p-1.5 text-ink-muted hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-slate-800">
+            <Trash2 className="h-4 w-4" />
+          </button>
         </div>
       ),
     },
@@ -80,425 +421,224 @@ export function StaffManagement({ role }: { role: 'teacher' | 'parent' }) {
   return (
     <div>
       <PageHeader
-        title={isTeacher ? 'Teachers' : 'Parents'}
-        subtitle={isTeacher ? 'Manage teaching staff and send invitations.' : 'Manage parents and link them to students.'}
-        action={<Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => { setEditing(null); setShowForm(true); }}>Add {isTeacher ? 'Teacher' : 'Parent'}</Button>}
-      />
-      {loading ? <RowSkeleton /> : (
-        <Card>
-          <DataTable columns={columns} data={list} rowKey={(u) => u.id} searchKeys={['full_name', 'phone']} searchPlaceholder={`Search ${role}s…`} emptyTitle={`No ${role}s yet`} />
-        </Card>
-      )}
-
-      <StaffFormModal
-        open={showForm}
-        editing={editing}
-        role={role}
-        schoolId={profile?.school_id ?? ''}
-        classes={classes}
-        students={students}
-        schoolName={school?.name}
-        onClose={() => { setShowForm(false); setEditing(null); }}
-        onSaved={() => { setShowForm(false); setEditing(null); refresh(); }}
-        onDemoCreated={(creds) => { setShowForm(false); setEditing(null); refresh(); setDemoCreds(creds); }}
+        title="Staff"
+        subtitle="Manage teaching staff and assignments"
+        icon={<UserCog className="h-6 w-6" />}
+        action={<Button onClick={openAdd} leftIcon={<Plus className="h-4 w-4" />}>Add Teacher</Button>}
       />
 
-      {role === 'parent' && (
-        <ParentLinksModal
-          open={!!editingLinks}
-          parent={editingLinks}
-          students={students}
-          classes={classes}
-          schoolId={profile?.school_id ?? ''}
-          onClose={() => setEditingLinks(null)}
-          onChanged={refresh}
-        />
-      )}
+      <Card>
+        <div className="mb-4 relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-muted" />
+          <input
+            className="input"
+            style={{ paddingLeft: '2.5rem' }}
+            placeholder="Search by name, phone, department…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
 
-      <Modal open={!!demoCreds} onClose={() => setDemoCreds(null)} title={`${role === 'teacher' ? 'Teacher' : 'Parent'} account ready`}>
-        {demoCreds && <DemoCredentialsCard credentials={demoCreds} />}
+        {loading ? (
+          <RowSkeleton rows={6} />
+        ) : filtered.length === 0 ? (
+          <EmptyState title="No teachers found" description={search ? 'Try adjusting your search.' : 'Click "Add Teacher" to create your first staff member.'} icon={<UserCog className="h-10 w-10" />} />
+        ) : (
+          <DataTable columns={columns} data={filtered} rowKey={(t) => t.id} />
+        )}
+      </Card>
+
+      {/* Add/Edit Modal */}
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? 'Edit Teacher' : 'Add Teacher'}
+        description={editing ? `Editing ${editing.full_name}` : 'Register a new teacher'}
+        size="xl"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
+            <Button type="submit" form="teacher-form" loading={saving}>{editing ? 'Save Changes' : 'Add Teacher'}</Button>
+          </>
+        }
+      >
+        <form id="teacher-form" onSubmit={submit} className="space-y-5">
+          {/* Avatar Upload */}
+          <div>
+            <label className="input-label">Profile Picture</label>
+            <div className="flex items-center gap-4">
+              <Avatar name={form.full_name || 'Teacher'} src={avatarPreview} size="lg" />
+              <div>
+                <label className={cn('btn btn-secondary cursor-pointer', saving && 'opacity-50 pointer-events-none')}>
+                  <Upload className="h-4 w-4" />
+                  <span>Upload Photo</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={onAvatarChange} disabled={saving} />
+                </label>
+                <p className="text-xs text-ink-muted mt-1">JPG, PNG up to 5MB</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Basic Info */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input label="Full Name *" required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} placeholder="Jane Smith" />
+            <Input label={editing ? 'Email (cannot change)' : 'Email *'} type="email" required={!editing} disabled={!!editing} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="jane@school.edu" leftIcon={<Mail className="h-4 w-4" />} />
+            <Input label="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 234 567 8900" leftIcon={<Phone className="h-4 w-4" />} />
+            <Select label="Gender" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+              <option value="">Select gender</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </Select>
+            <Input label="Date of Birth" type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} />
+            <Input label="Nationality" value={form.nationality} onChange={(e) => setForm({ ...form, nationality: e.target.value })} placeholder="e.g. American" />
+            <Input label="National ID" value={form.national_id} onChange={(e) => setForm({ ...form, national_id: e.target.value })} placeholder="ID number" />
+            <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} placeholder="e.g. Science" leftIcon={<Building2 className="h-4 w-4" />} />
+          </div>
+
+          <Textarea label="Address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="123 Main St, City, Country" />
+
+          {/* Professional Info */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input label="Qualification" value={form.qualification} onChange={(e) => setForm({ ...form, qualification: e.target.value })} placeholder="e.g. BSc Mathematics" />
+            <Input label="Employment Date" type="date" value={form.employment_date} onChange={(e) => setForm({ ...form, employment_date: e.target.value })} />
+            <Select label="Employment Status" value={form.employment_status} onChange={(e) => setForm({ ...form, employment_status: e.target.value })}>
+              <option value="active">Active</option>
+              <option value="on_leave">On Leave</option>
+              <option value="inactive">Inactive</option>
+              <option value="terminated">Terminated</option>
+            </Select>
+          </div>
+
+          <Textarea label="Medical History" value={form.medical_history} onChange={(e) => setForm({ ...form, medical_history: e.target.value })} placeholder="Known conditions, allergies, medications…" />
+
+          {/* Emergency Contact */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input label="Emergency Contact Name" value={form.emergency_contact_name} onChange={(e) => setForm({ ...form, emergency_contact_name: e.target.value })} placeholder="John Smith" />
+            <Input label="Emergency Contact Phone" value={form.emergency_contact_phone} onChange={(e) => setForm({ ...form, emergency_contact_phone: e.target.value })} placeholder="+1 234 567 8900" />
+          </div>
+
+          {/* Subjects Multi-Select */}
+          <div>
+            <label className="input-label">Assigned Subjects</label>
+            <div className="flex flex-wrap gap-2">
+              {subjects.length === 0 ? (
+                <p className="text-sm text-ink-muted">No subjects available. Create subjects first.</p>
+              ) : (
+                subjects.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggleSubject(s.id)}
+                    className={cn(
+                      'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+                      form.subject_ids.includes(s.id)
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-slate-100 text-ink-soft hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                    )}
+                  >
+                    {s.name}{s.code ? ` (${s.code})` : ''}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Classes Multi-Select */}
+          <div>
+            <label className="input-label">Assigned Classes</label>
+            <div className="flex flex-wrap gap-2">
+              {classes.length === 0 ? (
+                <p className="text-sm text-ink-muted">No classes available. Create classes first.</p>
+              ) : (
+                classes.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggleClass(c.id)}
+                    className={cn(
+                      'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+                      form.class_ids.includes(c.id)
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-slate-100 text-ink-soft hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                    )}
+                  >
+                    {c.name}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Document Uploads */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="input-label">ID Card (optional)</label>
+              <label className={cn('btn btn-secondary w-full cursor-pointer', saving && 'opacity-50 pointer-events-none')}>
+                <Upload className="h-4 w-4" />
+                <span>{idCardFile ? idCardFile.name : 'Upload ID Card'}</span>
+                <input type="file" className="hidden" onChange={onIdCardChange} disabled={saving} />
+              </label>
+            </div>
+            <div>
+              <label className="input-label">Certificates (optional)</label>
+              <label className={cn('btn btn-secondary w-full cursor-pointer', saving && 'opacity-50 pointer-events-none')}>
+                <Upload className="h-4 w-4" />
+                <span>{certificateFiles.length > 0 ? `${certificateFiles.length} file(s) selected` : 'Upload Certificates'}</span>
+                <input type="file" multiple className="hidden" onChange={onCertificatesChange} disabled={saving} />
+              </label>
+            </div>
+          </div>
+
+          {!editing && (
+            <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 p-3">
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                A default password of <code className="font-mono font-bold">{DEFAULT_PASSWORD}</code> will be assigned. The teacher should change it after first login.
+              </p>
+            </div>
+          )}
+        </form>
       </Modal>
 
-      <InviteModal
-        open={!!showInvite}
-        person={showInvite}
-        role={role}
-        link={inviteLink}
-        copied={copied}
-        toast={toast}
-        onClose={() => { setShowInvite(null); setInviteLink(null); setCopied(false); }}
-        onGenerate={async (person) => {
-          if (!user || !profile?.school_id) return;
-          const email = (person as AppUser & { email?: string }).phone ? undefined : undefined;
-          void email;
-          const token = generateToken();
-          const { error } = await supabase.from('invitations').insert({
-            school_id: profile.school_id, token, role, email: null, phone: person.phone, full_name: person.full_name,
-            status: 'pending', channel: 'sms', expires_at: daysFromNow(INVITATION_EXPIRY_DAYS), created_by: user.id,
-          });
-          if (error) { toast(error.message, 'error'); return; }
-          setInviteLink(`${window.location.origin}/invite/${token}`);
-          toast('Invitation generated.', 'success');
-          loadInvites();
-        }}
-      />
+      {/* Delete Confirmation */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Teacher"
+        description={`Are you sure you want to delete ${deleteTarget?.full_name}? This will also remove all class/subject assignments.`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="danger" loading={deleting} onClick={confirmDelete}>Delete</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink-muted">This action cannot be undone.</p>
+      </Modal>
+
+      {/* Credentials Modal */}
+      <Modal
+        open={!!credentialsModal}
+        onClose={() => setCredentialsModal(null)}
+        title="Teacher Created"
+        description="Share these credentials with the teacher. They should change the password after first login."
+        size="sm"
+        footer={<Button onClick={() => setCredentialsModal(null)}>Done</Button>}
+      >
+        {credentialsModal && (
+          <div className="space-y-3">
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
+              <p className="text-xs text-ink-muted mb-1">Email</p>
+              <p className="font-mono text-sm text-ink dark:text-slate-100">{credentialsModal.email}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
+              <p className="text-xs text-ink-muted mb-1">Password</p>
+              <p className="font-mono text-sm text-ink dark:text-slate-100">{credentialsModal.password}</p>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
-
-export function SchoolAdminTeachers() { return <StaffManagement role="teacher" />; }
-export function SchoolAdminParents() { return <StaffManagement role="parent" />; }
-
-function StaffFormModal({ open, editing, role, schoolId, schoolName, students, classes, onClose, onSaved, onDemoCreated }: {
-  open: boolean; editing: AppUser | null; role: UserRole; schoolId: string;
-  classes: ClassRow[]; students: Student[]; schoolName?: string;
-  onClose: () => void; onSaved: () => void; onDemoCreated: (c: DemoCredentials) => void;
-}) {
-  const { toast } = useToast();
-  const [form, setForm] = useState({ full_name: '', phone: '' });
-  const [saving, setSaving] = useState(false);
-  const [studentLinks, setStudentLinks] = useState<Array<{ student_id: string; relationship: string; is_primary_guardian: boolean }>>([]);
-  const [studentSearch, setStudentSearch] = useState('');
-  const [showStudentPicker, setShowStudentPicker] = useState(false);
-
-  useEffect(() => {
-    setForm({ full_name: editing?.full_name ?? '', phone: editing?.phone ?? '' });
-    setStudentLinks([]);
-    setStudentSearch('');
-    setShowStudentPicker(false);
-  }, [editing, open]);
-
-  const relationshipOptions = [
-    { value: 'father', label: 'Father' },
-    { value: 'mother', label: 'Mother' },
-    { value: 'guardian', label: 'Guardian' },
-    { value: 'aunt', label: 'Aunt' },
-    { value: 'uncle', label: 'Uncle' },
-    { value: 'other', label: 'Other' },
-  ];
-
-  const filteredStudents = students.filter((s) => {
-    if (!studentSearch.trim()) return true;
-    const q = studentSearch.toLowerCase();
-    return s.full_name.toLowerCase().includes(q) || s.admission_number.toLowerCase().includes(q);
-  });
-
-  const addStudentLink = (studentId: string) => {
-    if (studentLinks.some((l) => l.student_id === studentId)) return;
-    setStudentLinks((prev) => [...prev, { student_id: studentId, relationship: 'guardian', is_primary_guardian: prev.length === 0 }]);
-  };
-
-  const removeStudentLink = (studentId: string) => {
-    setStudentLinks((prev) => prev.filter((l) => l.student_id !== studentId));
-  };
-
-  const updateLink = (studentId: string, field: 'relationship' | 'is_primary_guardian', value: string | boolean) => {
-    setStudentLinks((prev) => {
-      if (field === 'is_primary_guardian' && value === true) {
-        return prev.map((l) => ({ ...l, is_primary_guardian: l.student_id === studentId }));
-      }
-      return prev.map((l) => l.student_id === studentId ? { ...l, [field]: value } : l);
-    });
-  };
-
-  const studentName = (id: string) => students.find((s) => s.id === id)?.full_name ?? 'Unknown';
-  const studentClass = (id: string) => {
-    const s = students.find((x) => x.id === id);
-    if (!s?.class_id) return '—';
-    return classes.find((c) => c.id === s.class_id)?.name ?? '—';
-  };
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    if (editing) {
-      const { error } = await supabase.from('app_users').update({ full_name: form.full_name, phone: form.phone }).eq('id', editing.id);
-      if (error) { setSaving(false); toast(error.message, 'error'); return; }
-      toast('Updated.', 'success');
-      setSaving(false);
-      onSaved();
-      return;
-    }
-
-    if (DEMO_MODE) {
-      const slug = schoolSlugFromName(schoolName ?? 'school');
-      const seq = Math.floor(Math.random() * 9000) + 1000;
-      const email = demoEmailFor(role, form.full_name, slug, seq);
-      const { error: demoErr } = await createDemoUser({
-        role,
-        fullName: form.full_name,
-        schoolId,
-        email,
-        studentLinks: role === 'parent' && studentLinks.length > 0 ? studentLinks : undefined,
-      });
-      setSaving(false);
-      if (demoErr) { toast(demoErr, 'error'); return; }
-      onDemoCreated({
-        email, password: DEMO_PASSWORD, fullName: form.full_name, role,
-        schoolId, schoolName,
-        studentName: role === 'parent' && studentLinks.length > 0 ? studentLinks.map((l) => studentName(l.student_id)).join(', ') : undefined,
-      });
-      return;
-    }
-
-    toast('Profile saved. Generate an invitation to activate their account.', 'success');
-    setSaving(false);
-    onSaved();
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title={editing ? `Edit ${role}` : `Add ${role}`} size="lg"
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button form="staff-form" type="submit" loading={saving}>Save</Button></>}>
-      <form id="staff-form" onSubmit={submit} className="space-y-4">
-        <Input label="Full name" name="full_name" required value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} />
-        <Input label="Phone number" name="phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} leftIcon={<Phone className="h-4 w-4" />} placeholder="+254…" />
-
-        {!editing && role === 'parent' && students.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-ink dark:text-slate-100">Linked Students</label>
-              <Button type="button" size="sm" variant="secondary" leftIcon={<UserPlus className="h-3.5 w-3.5" />} onClick={() => setShowStudentPicker((v) => !v)}>{showStudentPicker ? 'Close' : 'Add Student'}</Button>
-            </div>
-
-            {showStudentPicker && (
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-muted" />
-                  <input
-                    type="text"
-                    value={studentSearch}
-                    onChange={(e) => setStudentSearch(e.target.value)}
-                    placeholder="Search students by name or admission number…"
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-9 pr-3 py-2 text-sm text-ink dark:text-slate-100 focus:ring-2 focus:ring-primary-500/30 outline-none"
-                  />
-                </div>
-                <div className="max-h-48 overflow-y-auto space-y-1">
-                  {filteredStudents.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => addStudentLink(s.id)}
-                      disabled={studentLinks.some((l) => l.student_id === s.id)}
-                      className="flex w-full items-center gap-2 rounded-lg p-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Avatar name={s.full_name} src={s.photo_url} size="sm" />
-                      <div className="flex-1"><p className="font-medium text-ink dark:text-slate-100">{s.full_name}</p><p className="text-xs text-ink-muted">#{s.admission_number} · {studentClass(s.id)}</p></div>
-                      {studentLinks.some((l) => l.student_id === s.id) && <Check className="h-4 w-4 text-success" />}
-                    </button>
-                  ))}
-                  {filteredStudents.length === 0 && <p className="text-sm text-ink-muted py-2 text-center">No students found.</p>}
-                </div>
-              </div>
-            )}
-
-            {studentLinks.length > 0 && (
-              <div className="space-y-2">
-                {studentLinks.map((link) => (
-                  <div key={link.student_id} className="rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Avatar name={studentName(link.student_id)} size="sm" />
-                        <div><p className="text-sm font-medium text-ink dark:text-slate-100">{studentName(link.student_id)}</p><p className="text-xs text-ink-muted">#{students.find((s) => s.id === link.student_id)?.admission_number}</p></div>
-                      </div>
-                      <button type="button" onClick={() => removeStudentLink(link.student_id)} className="text-ink-muted hover:text-error"><X className="h-4 w-4" /></button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Select label="Relationship" value={link.relationship} onChange={(e) => updateLink(link.student_id, 'relationship', e.target.value)}>
-                        {relationshipOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                      </Select>
-                      <label className="flex items-end gap-2 pb-2">
-                        <input type="checkbox" checked={link.is_primary_guardian} onChange={(e) => updateLink(link.student_id, 'is_primary_guardian', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/30" />
-                        <span className="text-sm text-ink-soft dark:text-slate-300">Primary Guardian</span>
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {!editing && (
-          <p className="text-xs text-ink-muted rounded-xl bg-primary-50 dark:bg-primary-500/10 p-3">
-            {DEMO_MODE
-              ? 'A demo account will be created instantly with login credentials you can share.'
-              : `After saving, generate an invitation link. The ${role} will create their password and their account will activate automatically.`}
-          </p>
-        )}
-      </form>
-    </Modal>
-  );
-}
-
-function InviteModal({ open, person, role, link, copied, toast, onClose, onGenerate }: {
-  open: boolean; person: AppUser | null; role: string; link: string | null; copied: boolean;
-  toast: (m: string, t?: 'success' | 'error' | 'warning' | 'info') => void;
-  onClose: () => void; onGenerate: (p: AppUser) => void;
-}) {
-  return (
-    <Modal open={open} onClose={onClose} title={`Invite ${role}`} description={person ? `Send an invitation to ${person.full_name}` : ''}>
-      {link ? (
-        <div className="space-y-4">
-          <div className="rounded-xl bg-primary-50 dark:bg-primary-500/10 p-4">
-            <p className="text-sm text-ink-soft dark:text-slate-300 mb-2">This secure link expires in {INVITATION_EXPIRY_DAYS} days and works once.</p>
-            <div className="flex items-center gap-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5">
-              <code className="text-xs text-ink dark:text-slate-200 flex-1 truncate">{link}</code>
-              <button onClick={() => { navigator.clipboard.writeText(link); toast('Copied.', 'success'); }} className="shrink-0 rounded-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">
-                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-ink-muted" />}
-              </button>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="secondary" leftIcon={<Send className="h-4 w-4" />} className="flex-1" onClick={() => toast('Email queued (demo).', 'success')}>Email</Button>
-            <Button variant="secondary" leftIcon={<Phone className="h-4 w-4" />} className="flex-1" onClick={() => toast('SMS queued (demo).', 'success')}>SMS</Button>
-          </div>
-        </div>
-      ) : (
-        <div className="text-center py-4">
-          <p className="text-sm text-ink-muted mb-4">No pending invitation.</p>
-          {person && <Button onClick={() => onGenerate(person)} leftIcon={<Plus className="h-4 w-4" />}>Generate invitation</Button>}
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-const RELATIONSHIP_OPTIONS = [
-  { value: 'father', label: 'Father' },
-  { value: 'mother', label: 'Mother' },
-  { value: 'guardian', label: 'Guardian' },
-  { value: 'aunt', label: 'Aunt' },
-  { value: 'uncle', label: 'Uncle' },
-  { value: 'other', label: 'Other' },
-];
-
-function ParentLinksModal({ open, parent, students, classes, schoolId, onClose, onChanged }: {
-  open: boolean; parent: AppUser | null; students: Student[]; classes: ClassRow[];
-  schoolId: string; onClose: () => void; onChanged: () => void;
-}) {
-  const { toast } = useToast();
-  const [links, setLinks] = useState<Array<{ id: string; student_id: string; relationship: string; is_primary_guardian: boolean }>>([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [showPicker, setShowPicker] = useState(false);
-
-  useEffect(() => {
-    if (!parent) return;
-    setLoading(true);
-    supabase.from('student_parents').select('*').eq('parent_user_id', parent.user_id).then(({ data }) => {
-      setLinks((data ?? []).map((r: any) => ({ id: r.id, student_id: r.student_id, relationship: r.relationship, is_primary_guardian: r.is_primary_guardian })));
-      setLoading(false);
-    });
-    setSearch(''); setShowPicker(false);
-  }, [parent]);
-
-  const studentName = (id: string) => students.find((s) => s.id === id)?.full_name ?? 'Unknown';
-  const studentClass = (id: string) => {
-    const s = students.find((x) => x.id === id);
-    if (!s?.class_id) return '—';
-    return classes.find((c) => c.id === s.class_id)?.name ?? '—';
-  };
-  const studentAdm = (id: string) => students.find((s) => s.id === id)?.admission_number ?? '—';
-
-  const filtered = students.filter((s) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return s.full_name.toLowerCase().includes(q) || s.admission_number.toLowerCase().includes(q);
-  });
-
-  const addLink = async (studentId: string) => {
-    if (links.some((l) => l.student_id === studentId)) return;
-    const { data, error } = await supabase.from('student_parents').insert({
-      school_id: schoolId, student_id: studentId, parent_user_id: parent?.user_id,
-      relationship: 'guardian', is_primary_guardian: links.length === 0,
-    }).select().single();
-    if (error) { toast(error.message, 'error'); return; }
-    setLinks((prev) => [...prev, { id: data.id, student_id: data.student_id, relationship: data.relationship, is_primary_guardian: data.is_primary_guardian }]);
-    toast('Student linked.', 'success'); onChanged();
-  };
-
-  const removeLink = async (id: string) => {
-    const { error } = await supabase.from('student_parents').delete().eq('id', id);
-    if (error) { toast(error.message, 'error'); return; }
-    setLinks((prev) => prev.filter((l) => l.id !== id));
-    toast('Student unlinked.', 'success'); onChanged();
-  };
-
-  const updateLink = async (id: string, field: 'relationship' | 'is_primary_guardian', value: string | boolean) => {
-    const patch: Record<string, string | boolean> = { [field]: value };
-    if (field === 'is_primary_guardian' && value === true) {
-      const others = links.filter((l) => l.id !== id);
-      await Promise.all(others.map((l) => supabase.from('student_parents').update({ is_primary_guardian: false }).eq('id', l.id)));
-      setLinks((prev) => prev.map((l) => ({ ...l, is_primary_guardian: l.id === id ? true : false })));
-    } else {
-      setLinks((prev) => prev.map((l) => l.id === id ? { ...l, [field]: value } : l));
-    }
-    await supabase.from('student_parents').update(patch).eq('id', id);
-    onChanged();
-  };
-
-  if (!parent) return null;
-
-  return (
-    <Modal open={open} onClose={onClose} title={`${parent.full_name} — Linked Children`} size="lg"
-      footer={<Button variant="secondary" onClick={onClose}>Done</Button>}>
-      <div className="space-y-4">
-        {loading ? <RowSkeleton /> : (
-          <>
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-ink dark:text-slate-100">Linked Students ({links.length})</p>
-              <Button size="sm" variant="secondary" leftIcon={<UserPlus className="h-3.5 w-3.5" />} onClick={() => setShowPicker((v) => !v)}>{showPicker ? 'Close' : 'Add Student'}</Button>
-            </div>
-
-            {showPicker && (
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-muted" />
-                  <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search students…" className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-9 pr-3 py-2 text-sm text-ink dark:text-slate-100 focus:ring-2 focus:ring-primary-500/30 outline-none" />
-                </div>
-                <div className="max-h-48 overflow-y-auto space-y-1">
-                  {filtered.map((s) => (
-                    <button key={s.id} type="button" onClick={() => addLink(s.id)} disabled={links.some((l) => l.student_id === s.id)} className="flex w-full items-center gap-2 rounded-lg p-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                      <Avatar name={s.full_name} src={s.photo_url} size="sm" />
-                      <div className="flex-1"><p className="font-medium text-ink dark:text-slate-100">{s.full_name}</p><p className="text-xs text-ink-muted">#{s.admission_number} · {studentClass(s.id)}</p></div>
-                      {links.some((l) => l.student_id === s.id) && <Check className="h-4 w-4 text-success" />}
-                    </button>
-                  ))}
-                  {filtered.length === 0 && <p className="text-sm text-ink-muted py-2 text-center">No students found.</p>}
-                </div>
-              </div>
-            )}
-
-            {links.length > 0 ? (
-              <div className="space-y-2">
-                {links.map((link) => (
-                  <div key={link.id} className="rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Avatar name={studentName(link.student_id)} size="sm" />
-                        <div><p className="text-sm font-medium text-ink dark:text-slate-100">{studentName(link.student_id)}</p><p className="text-xs text-ink-muted">#{studentAdm(link.student_id)} · {studentClass(link.student_id)}</p></div>
-                      </div>
-                      <button onClick={() => removeLink(link.id)} className="text-ink-muted hover:text-error"><X className="h-4 w-4" /></button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Select value={link.relationship} onChange={(e) => updateLink(link.id, 'relationship', e.target.value)}>
-                        {RELATIONSHIP_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                      </Select>
-                      <label className="flex items-center gap-2">
-                        <input type="checkbox" checked={link.is_primary_guardian} onChange={(e) => updateLink(link.id, 'is_primary_guardian', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/30" />
-                        <span className="text-sm text-ink-soft dark:text-slate-300">Primary Guardian</span>
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-ink-muted py-4 text-center">No students linked yet. Click "Add Student" to link children.</p>
-            )}
-          </>
-        )}
-      </div>
-    </Modal>
-  );
-}
-

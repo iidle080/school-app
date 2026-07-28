@@ -1,99 +1,53 @@
-export function cn(...classes: Array<string | false | null | undefined>): string {
-  return classes.filter(Boolean).join(' ');
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
 }
 
-export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+export function formatDate(d: string | Date | null | undefined): string {
+  if (!d) return '—';
+  const date = typeof d === 'string' ? new Date(d) : d;
+  if (isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-export function formatDate(value: string | Date | null | undefined, opts?: Intl.DateTimeFormatOptions): string {
-  if (!value) return '—';
-  const d = typeof value === 'string' ? new Date(value) : value;
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, opts ?? { year: 'numeric', month: 'short', day: 'numeric' });
+export function relativeTime(d: string | Date): string {
+  const date = typeof d === 'string' ? new Date(d) : d;
+  const diff = Date.now() - date.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return formatDate(date);
 }
 
-export function formatDateTime(value: string | Date | null | undefined): string {
-  if (!value) return '—';
-  const d = typeof value === 'string' ? new Date(value) : value;
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-export function formatTime(value: string | Date | null | undefined): string {
-  if (!value) return '—';
-  const d = typeof value === 'string' ? new Date(value) : value;
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-}
-
-export function relativeTime(value: string | Date): string {
-  const d = typeof value === 'string' ? new Date(value) : value;
-  const diff = d.getTime() - Date.now();
-  const abs = Math.abs(diff);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ['year', 31536000000],
-    ['month', 2592000000],
-    ['week', 604800000],
-    ['day', 86400000],
-    ['hour', 3600000],
-    ['minute', 60000],
-    ['second', 1000],
-  ];
-  for (const [unit, ms] of units) {
-    if (abs >= ms || unit === 'second') {
-      return rtf.format(Math.round(diff / ms), unit);
-    }
-  }
-  return 'just now';
-}
-
-export function formatCurrency(amount: number, currency = 'KES'): string {
-  return new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
-export function generateToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-export function isExpired(expiresAt: string): boolean {
-  return new Date(expiresAt).getTime() < Date.now();
-}
-
-export function daysFromNow(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
+export function percentage(marks: number, total: number): number {
+  if (!total || total === 0) return 0;
+  return Math.round((marks / total) * 100 * 100) / 100;
 }
 
 export function gradeFromPercentage(pct: number): string {
+  if (pct >= 90) return 'A+';
   if (pct >= 80) return 'A';
   if (pct >= 70) return 'B';
   if (pct >= 60) return 'C';
   if (pct >= 50) return 'D';
-  return 'E';
+  return 'F';
 }
 
-export function percentage(marks: number | null, total: number): number | null {
-  if (marks === null) return null;
-  if (!total) return null;
-  return Math.round((marks / total) * 1000) / 10;
+export function initials(name: string): string {
+  return name?.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase() ?? '?';
+}
+
+import { supabase } from '@/lib/supabase';
+
+export async function uploadFile(bucket: string, path: string, file: File): Promise<string | null> {
+  const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
+  if (error) return null;
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data.publicUrl;
 }

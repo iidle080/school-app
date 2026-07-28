@@ -1,5 +1,4 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,155 +6,86 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-interface StudentLink {
-  student_id: string;
-  relationship: string;
-  is_primary_guardian: boolean;
-}
-
-interface DemoCreateBody {
-  email: string;
-  password: string;
-  full_name: string;
-  role: "school_admin" | "teacher" | "parent";
-  school_id: string;
-  student_id?: string | null;
-  student_links?: StudentLink[] | null;
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
-  if (req.method !== "POST") {
-    return json({ error: "Method not allowed" }, 405);
-  }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) {
-    return json({ error: "Server not configured for demo user creation." }, 500);
-  }
-
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const token = authHeader.replace("Bearer ", "");
-
-  if (!token) {
-    return json({ error: "Unauthorized." }, 401);
-  }
-  if (!anonKey) {
-    return json({ error: "Server not configured." }, 500);
-  }
-
-  let body: DemoCreateBody;
   try {
-    body = await req.json();
-  } catch {
-    return json({ error: "Invalid JSON body." }, 400);
-  }
+    const { email, password, fullName, phone, schoolId, role } = await req.json();
 
-  const { email, password, full_name, role, school_id, student_id, student_links } = body;
-  if (!email || !password || !full_name || !role || !school_id) {
-    return json({ error: "Missing required fields." }, 400);
-  }
-  if (!["school_admin", "teacher", "parent"].includes(role)) {
-    return json({ error: "Invalid role for demo creation." }, 400);
-  }
-
-  // Verify caller is authenticated. The anon key is the API key; the user JWT
-  // goes in the Authorization header so getUser() validates it against GoTrue.
-  const callerClient = createClient(supabaseUrl, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-  const { data: callerData, error: callerErr } = await callerClient.auth.getUser();
-  if (callerErr || !callerData?.user) {
-    return json({ error: "Unauthorized." }, 401);
-  }
-  const callerUserId = callerData.user.id;
-  const callerRole = (callerData.user.app_metadata as { role?: string })?.role;
-
-  // Service-role admin client — bypasses RLS for user creation + profile insert.
-  const admin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  // Resolve caller role: prefer app_users table (source of truth) over JWT claim.
-  const { data: callerProfile } = await admin
-    .from("app_users")
-    .select("school_id, role")
-    .eq("user_id", callerUserId)
-    .maybeSingle();
-  const cp = callerProfile as { school_id: string | null; role: string } | null;
-  const resolvedCallerRole = cp?.role ?? callerRole ?? "";
-
-  if (resolvedCallerRole !== "super_admin") {
-    if (resolvedCallerRole !== "school_admin" || cp?.school_id !== school_id) {
-      return json({ error: "Not allowed to create users for this school." }, 403);
+    if (!email || !password || !fullName || !schoolId || !role) {
+      return new Response(JSON.stringify({ error: "Missing required fields" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
-    if (role === "school_admin") {
-      return json({ error: "Only the platform owner can create school admins." }, 403);
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+    // Create auth user via admin API
+    const createRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceRoleKey}`,
+        "apikey": serviceRoleKey,
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: fullName },
+      }),
+    });
+
+    if (!createRes.ok) {
+      const err = await createRes.json();
+      return new Response(JSON.stringify({ error: err.message ?? "Failed to create user" }), {
+        status: createRes.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
-  }
 
-  // Create the auth user with role metadata so the JWT carries the role claim.
-  // Include provider/providers in app_metadata and email_verified in user_metadata
-  // — GoTrue requires these for password authentication to succeed.
-  const { data: signUp, error: signUpErr } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: { full_name: full_name, email_verified: true },
-    app_metadata: { role, provider: "email", providers: ["email"] },
-  });
-  if (signUpErr) {
-    return json({ error: signUpErr.message }, 400);
-  }
-  const newUserId = signUp.user?.id;
-  if (!newUserId) {
-    return json({ error: "Failed to create auth user." }, 500);
-  }
+    const createdUser = await createRes.json();
+    const userId = createdUser.id;
 
-  // Insert the app_users profile row (service role bypasses the self-only RLS).
-  const { error: profileErr } = await admin.from("app_users").insert({
-    user_id: newUserId,
-    school_id,
-    role,
-    full_name,
-    active: true,
-  });
-  if (profileErr) {
-    // Best-effort cleanup of the orphaned auth user.
-    await admin.auth.admin.deleteUser(newUserId);
-    return json({ error: profileErr.message }, 400);
-  }
+    // Insert app_users record
+    const insertRes = await fetch(`${supabaseUrl}/rest/v1/app_users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceRoleKey}`,
+        "apikey": serviceRoleKey,
+        "Prefer": "return=representation",
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        school_id: schoolId,
+        role,
+        full_name: fullName,
+        phone: phone ?? null,
+        active: true,
+      }),
+    });
 
-  // For parents, link to one or more students.
-  if (role === "parent") {
-    const links: StudentLink[] = [];
-    if (student_links && Array.isArray(student_links) && student_links.length > 0) {
-      links.push(...student_links);
-    } else if (student_id) {
-      links.push({ student_id, relationship: "guardian", is_primary_guardian: true });
+    if (!insertRes.ok) {
+      const err = await insertRes.json();
+      return new Response(JSON.stringify({ error: err.message ?? "Failed to create profile" }), {
+        status: insertRes.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
-    if (links.length > 0) {
-      const rows = links.map((l) => ({
-        school_id,
-        student_id: l.student_id,
-        parent_user_id: newUserId,
-        relationship: l.relationship || "guardian",
-        is_primary_guardian: !!l.is_primary_guardian,
-      }));
-      await admin.from("student_parents").insert(rows);
-    }
-  }
 
-  return json({ user_id: newUserId, email, role }, 200);
+    const profile = await insertRes.json();
 
-  function json(payload: unknown, status: number) {
-    return new Response(JSON.stringify(payload), {
-      status,
+    return new Response(JSON.stringify({ userId, profileId: profile[0]?.id }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: (err as Error).message }), {
+      status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

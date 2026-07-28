@@ -1,42 +1,30 @@
-import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-type BadgeVariant = 'success' | 'warning' | 'error' | 'primary' | 'neutral';
+type Variant = 'primary' | 'secondary' | 'success' | 'warning' | 'error';
 
-const VARIANT_CLASSES: Record<BadgeVariant, string> = {
-  success: 'badge-success',
-  warning: 'badge-warning',
-  error: 'badge-error',
-  primary: 'badge-primary',
-  neutral: 'badge-neutral',
-};
-
-export function Badge({
-  variant = 'neutral',
-  children,
-  className,
-}: {
-  variant?: BadgeVariant;
-  children: ReactNode;
-  className?: string;
-}) {
-  return <span className={cn(VARIANT_CLASSES[variant], className)}>{children}</span>;
+export function Badge({ children, variant = 'secondary', className }: { children: React.ReactNode; variant?: Variant; className?: string }) {
+  const variants: Record<Variant, string> = {
+    primary: 'bg-primary-50 text-primary-700 dark:bg-primary-500/15 dark:text-primary-light',
+    secondary: 'bg-slate-100 text-ink-soft dark:bg-slate-800 dark:text-slate-300',
+    success: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400',
+    warning: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
+    error: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-400',
+  };
+  return <span className={cn('inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium', variants[variant], className)}>{children}</span>;
 }
 
-export function statusBadge(status: string): { variant: BadgeVariant; label: string } {
-  const map: Record<string, { variant: BadgeVariant; label: string }> = {
-    active: { variant: 'success', label: 'Active' },
-    pending: { variant: 'warning', label: 'Pending' },
-    suspended: { variant: 'error', label: 'Suspended' },
-    expired: { variant: 'neutral', label: 'Expired' },
-    accepted: { variant: 'success', label: 'Accepted' },
-    cancelled: { variant: 'neutral', label: 'Cancelled' },
-    trial: { variant: 'primary', label: 'Trial' },
-    past_due: { variant: 'warning', label: 'Past Due' },
+export function statusBadge(status: string): { variant: Variant; label: string } {
+  const map: Record<string, { variant: Variant; label: string }> = {
     present: { variant: 'success', label: 'Present' },
     absent: { variant: 'error', label: 'Absent' },
     late: { variant: 'warning', label: 'Late' },
-    excused: { variant: 'neutral', label: 'Excused' },
+    excused: { variant: 'secondary', label: 'Excused' },
+    active: { variant: 'success', label: 'Active' },
+    inactive: { variant: 'secondary', label: 'Inactive' },
+    draft: { variant: 'secondary', label: 'Draft' },
+    scheduled: { variant: 'primary', label: 'Scheduled' },
+    completed: { variant: 'primary', label: 'Completed' },
+    published: { variant: 'success', label: 'Published' },
   };
-  return map[status] ?? { variant: 'neutral', label: status };
+  return map[status] ?? { variant: 'secondary', label: status };
 }
