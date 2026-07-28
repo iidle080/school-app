@@ -42,6 +42,7 @@ import { ParentDashboard } from '@/pages/parent/ParentDashboard';
 import { ParentAttendance } from '@/pages/parent/ParentAttendance';
 import { ParentHomework } from '@/pages/parent/ParentHomework';
 import { ParentResults } from '@/pages/parent/ParentResults';
+import { ParentExams } from '@/pages/parent/ParentExams';
 import { ParentMessages } from '@/pages/parent/ParentMessages';
 import { ParentProfile } from '@/pages/parent/ParentProfile';
 
@@ -102,6 +103,7 @@ const parentNav: NavItem[] = [
   { label: 'Dashboard', to: '/parent', icon: <LayoutDashboard className="h-5 w-5" /> },
   { label: 'Attendance', to: '/parent/attendance', icon: <CalendarCheck className="h-5 w-5" /> },
   { label: 'Homework', to: '/parent/homework', icon: <BookCopy className="h-5 w-5" /> },
+  { label: 'Exams', to: '/parent/exams', icon: <ClipboardList className="h-5 w-5" /> },
   { label: 'Results', to: '/parent/results', icon: <Award className="h-5 w-5" /> },
   { label: 'Messages', to: '/parent/messages', icon: <MessageSquare className="h-5 w-5" /> },
   { label: 'Profile', to: '/parent/profile', icon: <User className="h-5 w-5" /> },
@@ -151,6 +153,7 @@ export default function App() {
                   <Route index element={<ParentDashboard />} />
                   <Route path="attendance" element={<ParentAttendance />} />
                   <Route path="homework" element={<ParentHomework />} />
+                  <Route path="exams" element={<ParentExams />} />
                   <Route path="results" element={<ParentResults />} />
                   <Route path="messages" element={<ParentMessages />} />
                   <Route path="profile" element={<ParentProfile />} />
