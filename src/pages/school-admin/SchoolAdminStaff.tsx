@@ -265,7 +265,7 @@ export function SchoolAdminStaff() {
           }
         }
         if (assignments.length > 0) {
-          await supabase.from('class_subjects').insert(assignments);
+          await supabase.from('class_subjects').upsert(assignments, { onConflict: 'class_id,subject_id' });
         }
       }
 
@@ -332,12 +332,12 @@ export function SchoolAdminStaff() {
               school_id: SCHOOL_ID,
               class_id: classId,
               subject_id: subjectId,
-              teacher_id: userId,
+              teacher_id: profileId,
             });
           }
         }
         if (assignments.length > 0) {
-          await supabase.from('class_subjects').insert(assignments);
+          await supabase.from('class_subjects').upsert(assignments, { onConflict: 'class_id,subject_id' });
         }
       }
 

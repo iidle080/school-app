@@ -142,7 +142,7 @@ export function SchoolAdminExamSessions() {
       status: form.status,
       published: willPublish,
       published_at: willPublish ? new Date().toISOString() : null,
-      created_by: profile?.id ?? null,
+      created_by: profile?.user_id ?? null,
     };
 
     if (editing) {
