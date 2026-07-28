@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
-import { BarChart3, Printer, FileDown, FileSpreadsheet, Trophy } from 'lucide-react';
+import { ChartBar as BarChart3, Printer, FileDown, FileSpreadsheet, Trophy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useSchoolData } from '@/hooks/useSchoolData';

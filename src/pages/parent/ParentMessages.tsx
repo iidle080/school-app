@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { MessageSquare, Send, Search, Check, CheckCheck, Users, AlertCircle } from 'lucide-react';
+import { MessageSquare, Send, Search, Check, CheckCheck, Users, CircleAlert as AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useParent } from '@/context/ParentContext';

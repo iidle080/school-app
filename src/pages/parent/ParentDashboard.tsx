@@ -1,18 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  CalendarCheck,
-  BookOpen,
-  BarChart3,
-  Megaphone,
-  MessageSquare,
-  User,
-  ChevronDown,
-  TrendingUp,
-  Award,
-  AlertCircle,
-} from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, BookOpen, ChartBar as BarChart3, Megaphone, MessageSquare, User, ChevronDown, TrendingUp, Award, CircleAlert as AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useParent } from '@/context/ParentContext';
