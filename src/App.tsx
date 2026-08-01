@@ -6,7 +6,7 @@ import { ToastProvider } from '@/context/ToastContext';
 import { ParentProvider } from '@/context/ParentContext';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { DashboardLayout, type NavItem } from '@/components/layout/DashboardLayout';
-import { LayoutDashboard, BookOpen, GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, User, UserCog, Award, Building2, Users } from 'lucide-react';
+import { LayoutDashboard, BookOpen, GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, User, UserCog, Award, Building2, Users, CreditCard, ScrollText, Settings } from 'lucide-react';
 
 // Auth
 import { LoginPage } from '@/pages/auth/LoginPage';
@@ -37,6 +37,11 @@ import { TeacherProfile } from '@/pages/teacher/TeacherProfile';
 // Super Admin
 import { SuperAdminDashboard } from '@/pages/super-admin/SuperAdminDashboard';
 import { SuperAdminProfile } from '@/pages/super-admin/SuperAdminProfile';
+import { SuperAdminSchools } from '@/pages/super-admin/SuperAdminSchools';
+import { SuperAdminSubscriptions } from '@/pages/super-admin/SuperAdminSubscriptions';
+import { SuperAdminUsers } from '@/pages/super-admin/SuperAdminUsers';
+import { SuperAdminAuditLogs } from '@/pages/super-admin/SuperAdminAuditLogs';
+import { SuperAdminSettings } from '@/pages/super-admin/SuperAdminSettings';
 
 // Parent
 import { ParentDashboard } from '@/pages/parent/ParentDashboard';
@@ -73,6 +78,11 @@ function RoleRedirect() {
 
 const superAdminNav: NavItem[] = [
   { label: 'Dashboard', to: '/super-admin', icon: <LayoutDashboard className="h-5 w-5" /> },
+  { label: 'Schools', to: '/super-admin/schools', icon: <Building2 className="h-5 w-5" /> },
+  { label: 'Subscriptions', to: '/super-admin/subscriptions', icon: <CreditCard className="h-5 w-5" /> },
+  { label: 'Users', to: '/super-admin/users', icon: <Users className="h-5 w-5" /> },
+  { label: 'Audit Logs', to: '/super-admin/audit-logs', icon: <ScrollText className="h-5 w-5" /> },
+  { label: 'Settings', to: '/super-admin/settings', icon: <Settings className="h-5 w-5" /> },
   { label: 'Profile', to: '/super-admin/profile', icon: <User className="h-5 w-5" /> },
 ];
 
@@ -124,6 +134,11 @@ export default function App() {
 
                 <Route path="/super-admin" element={<ProtectedRoute allowedRoles={['super_admin']}><DashboardLayout navItems={superAdminNav} roleLabel="Super Admin" /></ProtectedRoute>}>
                   <Route index element={<SuperAdminDashboard />} />
+                  <Route path="schools" element={<SuperAdminSchools />} />
+                  <Route path="subscriptions" element={<SuperAdminSubscriptions />} />
+                  <Route path="users" element={<SuperAdminUsers />} />
+                  <Route path="audit-logs" element={<SuperAdminAuditLogs />} />
+                  <Route path="settings" element={<SuperAdminSettings />} />
                   <Route path="profile" element={<SuperAdminProfile />} />
                 </Route>
 
