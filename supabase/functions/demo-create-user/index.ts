@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,63 +25,51 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-    // Create auth user via admin API
-    const createRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${serviceRoleKey}`,
-        "apikey": serviceRoleKey,
-      },
-      body: JSON.stringify({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { full_name: fullName },
-      }),
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    if (!createRes.ok) {
-      const err = await createRes.json();
-      return new Response(JSON.stringify({ error: err.message ?? "Failed to create user" }), {
-        status: createRes.status,
+    // Create auth user
+    const { data: userData, error: authErr } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
+
+    if (authErr || !userData?.user) {
+      return new Response(JSON.stringify({ error: authErr?.message ?? "Failed to create user" }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const createdUser = await createRes.json();
-    const userId = createdUser.id;
+    const userId = userData.user.id;
 
     // Insert app_users record
-    const insertRes = await fetch(`${supabaseUrl}/rest/v1/app_users`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${serviceRoleKey}`,
-        "apikey": serviceRoleKey,
-        "Prefer": "return=representation",
-      },
-      body: JSON.stringify({
+    const { data: profile, error: profileErr } = await admin
+      .from("app_users")
+      .insert({
         user_id: userId,
         school_id: schoolId,
         role,
         full_name: fullName,
         phone: phone ?? null,
         active: true,
-      }),
-    });
+      })
+      .select("id")
+      .single();
 
-    if (!insertRes.ok) {
-      const err = await insertRes.json();
-      return new Response(JSON.stringify({ error: err.message ?? "Failed to create profile" }), {
-        status: insertRes.status,
+    if (profileErr) {
+      // Auth user was created — clean up to avoid orphaned auth accounts
+      await admin.auth.admin.deleteUser(userId);
+      return new Response(JSON.stringify({ error: profileErr.message ?? "Failed to create profile" }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const profile = await insertRes.json();
-
-    return new Response(JSON.stringify({ userId, profileId: profile[0]?.id }), {
+    return new Response(JSON.stringify({ userId, profileId: profile?.id }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
