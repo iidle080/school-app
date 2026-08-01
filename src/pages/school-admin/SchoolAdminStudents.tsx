@@ -111,7 +111,7 @@ export function SchoolAdminStudents() {
   const [linkSaving, setLinkSaving] = useState(false);
 
   // Success modal
-  const [successModal, setSuccessModal] = useState<{ studentName: string; parentName: string; inviteSent: boolean; channel: string; credentials?: { email: string; password: string } } | null>(null);
+  const [successModal, setSuccessModal] = useState<{ studentName: string; parentName: string; inviteLink: string | null; channel: string; sendUrl: string | null; credentials?: { email: string; password: string } } | null>(null);
 
   const classNameMap = useMemo(() => {
     const map: Record<string, ClassRow> = {};
@@ -258,7 +258,7 @@ export function SchoolAdminStudents() {
       } else {
         toast(`${studentForm.full_name} enrolled and linked to ${existingParent.full_name}`);
       }
-      setSuccessModal({ studentName: studentForm.full_name, parentName: existingParent.full_name, inviteSent: false, channel: '' });
+      setSuccessModal({ studentName: studentForm.full_name, parentName: existingParent.full_name, inviteLink: null, channel: '', sendUrl: null });
     } else {
       // Create new parent account
       const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/demo-create-user`;
@@ -315,7 +315,10 @@ export function SchoolAdminStudents() {
 
       credentials = { email: parentForm.email.trim(), password: DEFAULT_PASSWORD };
 
-      // Send invitation if requested
+      // Create invitation record if requested — the admin sends it themselves
+      let inviteLink: string | null = null;
+      let sendUrl: string | null = null;
+
       if (parentForm.send_invite) {
         channel = parentForm.invite_channel;
         try {
@@ -328,7 +331,6 @@ export function SchoolAdminStudents() {
             },
             body: JSON.stringify({
               schoolId: SCHOOL_ID,
-              schoolName: school?.name ?? 'Your school',
               studentName: studentForm.full_name,
               parentName: parentForm.full_name,
               parentEmail: parentForm.email.trim() || null,
@@ -336,22 +338,32 @@ export function SchoolAdminStudents() {
               relationship: parentForm.relationship,
               channel: parentForm.invite_channel,
               studentId: newStudentId,
+              appOrigin: window.location.origin,
             }),
           });
 
           if (invRes.ok) {
-            inviteSent = true;
+            const invData = await invRes.json();
+            inviteLink = invData.inviteLink as string;
+            const schoolNameVal = school?.name ?? 'Your school';
+            const subject = `You're invited to join ${schoolNameVal} on EduBridge`;
+            const bodyText = `Hi ${parentForm.full_name},\n\n${schoolNameVal} has invited you to join EduBridge as a parent of ${studentForm.full_name}.\n\nClick the link below to activate your account:\n${inviteLink}\n\nThis invitation expires in 7 days.`;
+            if (parentForm.invite_channel === 'email') {
+              sendUrl = `mailto:${parentForm.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+            } else {
+              sendUrl = `sms:${parentForm.phone}?body=${encodeURIComponent(`${schoolNameVal} invited you to EduBridge as parent of ${studentForm.full_name}. Activate: ${inviteLink}`)}`;
+            }
           } else {
             const invErr = await invRes.json().catch(() => ({}));
-            toast(`Invitation not sent: ${invErr.error ?? 'unknown error'}`, 'error');
+            toast(`Invitation not created: ${invErr.error ?? 'unknown error'}`, 'error');
           }
         } catch {
-          toast('Invitation send failed, but accounts were created', 'error');
+          toast('Invitation creation failed, but accounts were created', 'error');
         }
       }
 
       toast(`${studentForm.full_name} enrolled and ${parentForm.full_name} connected`);
-      setSuccessModal({ studentName: studentForm.full_name, parentName: parentForm.full_name, inviteSent, channel, credentials });
+      setSuccessModal({ studentName: studentForm.full_name, parentName: parentForm.full_name, inviteLink, channel, sendUrl, credentials });
     }
 
     setSaving(false);
@@ -999,11 +1011,22 @@ export function SchoolAdminStudents() {
               </p>
             </div>
 
-            {successModal.inviteSent ? (
-              <div className="rounded-lg bg-success-soft p-3 text-center">
-                <Send className="h-5 w-5 mx-auto text-success-soft-text mb-1" />
-                <p className="text-sm text-success-soft-text">
-                  Invitation sent via {successModal.channel.toUpperCase()}
+            {successModal.sendUrl && successModal.inviteLink ? (
+              <div className="space-y-3">
+                <div className="rounded-lg bg-primary-50 dark:bg-primary-500/10 p-3 space-y-2">
+                  <p className="text-sm text-primary-600 dark:text-primary-light">
+                    Invitation link created for {successModal.channel.toUpperCase()}.
+                  </p>
+                  <div className="rounded bg-white dark:bg-slate-800 p-2">
+                    <p className="text-xs text-ink-muted break-all font-mono">{successModal.inviteLink}</p>
+                  </div>
+                </div>
+                <a href={successModal.sendUrl} className="btn btn-primary w-full justify-center text-sm">
+                  <Send className="h-4 w-4" />
+                  Open {successModal.channel === 'email' ? 'Email' : 'SMS'} App to Send
+                </a>
+                <p className="text-xs text-ink-muted text-center">
+                  This opens your {successModal.channel === 'email' ? 'email app' : 'messaging app'} with the invitation pre-written. Just hit send.
                 </p>
               </div>
             ) : successModal.credentials ? (
