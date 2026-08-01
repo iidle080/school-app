@@ -29,7 +29,8 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Create auth user
+    // Try to create auth user
+    let userId: string;
     const { data: userData, error: authErr } = await admin.auth.admin.createUser({
       email,
       password,
@@ -37,16 +38,57 @@ Deno.serve(async (req: Request) => {
       user_metadata: { full_name: fullName },
     });
 
-    if (authErr || !userData?.user) {
-      return new Response(JSON.stringify({ error: authErr?.message ?? "Failed to create user" }), {
+    if (authErr) {
+      // If already registered, look up the existing auth user
+      if (authErr.message?.toLowerCase().includes("already") || authErr.message?.toLowerCase().includes("registered")) {
+        const { data: listData, error: listErr } = await admin.auth.admin.listUsers({ perPage: 1000 });
+        if (listErr || !listData?.users) {
+          return new Response(JSON.stringify({ error: "Email already registered and could not look up existing user" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const existing = listData.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+        if (!existing) {
+          return new Response(JSON.stringify({ error: "Email already registered but user not found" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        userId = existing.id;
+        // Update their password so they can log in with the new credentials
+        await admin.auth.admin.updateUserById(userId, { password });
+      } else {
+        return new Response(JSON.stringify({ error: authErr.message ?? "Failed to create user" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else if (!userData?.user) {
+      return new Response(JSON.stringify({ error: "Failed to create user" }), {
         status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } else {
+      userId = userData.user.id;
+    }
+
+    // Check if app_users profile already exists for this user+school
+    const { data: existingProfile } = await admin
+      .from("app_users")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("school_id", schoolId)
+      .maybeSingle();
+
+    if (existingProfile) {
+      // Profile already exists — just return the IDs so the caller can link
+      return new Response(JSON.stringify({ userId, profileId: existingProfile.id }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userId = userData.user.id;
-
-    // Insert app_users record
+    // Insert app_users profile
     const { data: profile, error: profileErr } = await admin
       .from("app_users")
       .insert({
@@ -61,8 +103,6 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (profileErr) {
-      // Auth user was created — clean up to avoid orphaned auth accounts
-      await admin.auth.admin.deleteUser(userId);
       return new Response(JSON.stringify({ error: profileErr.message ?? "Failed to create profile" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
