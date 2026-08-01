@@ -75,7 +75,7 @@ export function SchoolAdminParents() {
     const { data } = await supabase
       .from('student_parents')
       .select('*')
-      .in('parent_user_id', parents.map((p) => p.id));
+      .in('parent_user_id', parents.map((p) => p.user_id));
     const map: Record<string, StudentParent[]> = {};
     (data as StudentParent[] | null)?.forEach((sp) => {
       if (!map[sp.parent_user_id]) map[sp.parent_user_id] = [];
@@ -192,7 +192,7 @@ export function SchoolAdminParents() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
-    await supabase.from('student_parents').delete().eq('parent_user_id', deleteTarget.id);
+    await supabase.from('student_parents').delete().eq('parent_user_id', deleteTarget.user_id);
     const { error } = await supabase.from('app_users').delete().eq('id', deleteTarget.id);
     setDeleting(false);
     if (error) { toast(error.message, 'error'); return; }
@@ -215,7 +215,7 @@ export function SchoolAdminParents() {
     const { error } = await supabase.from('student_parents').insert({
       school_id: SCHOOL_ID,
       student_id: linkStudentId,
-      parent_user_id: linkParent.id,
+      parent_user_id: linkParent.user_id,
       relationship: linkRelationship,
       is_primary_guardian: linkIsPrimary,
     });
@@ -255,7 +255,7 @@ export function SchoolAdminParents() {
       key: 'children',
       header: 'Linked Children',
       render: (p) => {
-        const links = parentLinks[p.id] ?? [];
+        const links = parentLinks[p.user_id] ?? [];
         if (links.length === 0) return <span className="text-xs text-ink-muted">No children linked</span>;
         return (
           <div className="flex flex-wrap gap-1">
@@ -403,11 +403,11 @@ export function SchoolAdminParents() {
             <input type="checkbox" checked={linkIsPrimary} onChange={(e) => setLinkIsPrimary(e.target.checked)} className="rounded" />
             Primary guardian
           </label>
-          {linkParent && (parentLinks[linkParent.id] ?? []).length > 0 && (
+          {linkParent && (parentLinks[linkParent.user_id] ?? []).length > 0 && (
             <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
               <p className="text-xs font-medium text-ink-muted mb-2">Currently linked to:</p>
               <div className="space-y-1">
-                {(parentLinks[linkParent.id] ?? []).map((sp) => (
+                {(parentLinks[linkParent.user_id] ?? []).map((sp) => (
                   <div key={sp.id} className="flex items-center justify-between">
                     <span className="text-sm text-ink-soft dark:text-slate-300">
                       {studentMap[sp.student_id]?.full_name ?? 'Unknown'}
