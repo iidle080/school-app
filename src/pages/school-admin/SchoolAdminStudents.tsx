@@ -1,4 +1,4 @@
-import { useState, useMemo, type FormEvent } from 'react';
+import { useState, useMemo, useEffect, useCallback, type FormEvent } from 'react';
 import { GraduationCap, Plus, Pencil, Trash2, Upload, Search, Users, Mail, Phone, Send, Check, ChevronRight, ChevronLeft, Link2, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -121,7 +121,7 @@ export function SchoolAdminStudents() {
 
   const parentMap = useMemo(() => {
     const map: Record<string, AppUser> = {};
-    parents.forEach((p) => { map[p.id] = p; });
+    parents.forEach((p) => { map[p.user_id] = p; map[p.id] = p; });
     return map;
   }, [parents]);
 
@@ -137,7 +137,7 @@ export function SchoolAdminStudents() {
   }, [students, search, classNameMap]);
 
   // Load parent links for all students
-  const loadParentLinks = async () => {
+  const loadParentLinks = useCallback(async () => {
     if (students.length === 0) return;
     const { data } = await supabase
       .from('student_parents')
@@ -149,9 +149,9 @@ export function SchoolAdminStudents() {
       map[sp.student_id].push(sp);
     });
     setParentLinks(map);
-  };
+  }, [students]);
 
-  useMemo(() => { loadParentLinks(); }, [students]);
+  useEffect(() => { loadParentLinks(); }, [loadParentLinks]);
 
   // ---- Wizard handlers ----
   const openWizard = () => {
