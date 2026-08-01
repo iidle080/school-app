@@ -6,7 +6,7 @@ import { ToastProvider } from '@/context/ToastContext';
 import { ParentProvider } from '@/context/ParentContext';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { DashboardLayout, type NavItem } from '@/components/layout/DashboardLayout';
-import { LayoutDashboard, BookOpen, GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, User, UserCog, Award, Building2 } from 'lucide-react';
+import { LayoutDashboard, BookOpen, GraduationCap, CalendarCheck, BookCopy, ClipboardList, FileText, MessageSquare, Megaphone, CalendarDays, User, UserCog, Award, Building2, Users } from 'lucide-react';
 
 // Auth
 import { LoginPage } from '@/pages/auth/LoginPage';
@@ -20,6 +20,7 @@ import { SchoolAdminSubjects } from '@/pages/school-admin/SchoolAdminSubjects';
 import { SchoolAdminExamSessions } from '@/pages/school-admin/SchoolAdminExamSessions';
 import { SchoolAdminAcademicYears } from '@/pages/school-admin/SchoolAdminAcademicYears';
 import { SchoolAdminAnnouncements } from '@/pages/school-admin/SchoolAdminAnnouncements';
+import { SchoolAdminParents } from '@/pages/school-admin/SchoolAdminParents';
 import { SchoolAdminProfile } from '@/pages/school-admin/SchoolAdminProfile';
 
 // Teacher
@@ -79,6 +80,7 @@ const schoolAdminNav: NavItem[] = [
   { label: 'Dashboard', to: '/school-admin', icon: <LayoutDashboard className="h-5 w-5" /> },
   { label: 'Students', to: '/school-admin/students', icon: <GraduationCap className="h-5 w-5" /> },
   { label: 'Staff', to: '/school-admin/staff', icon: <UserCog className="h-5 w-5" /> },
+  { label: 'Parents', to: '/school-admin/parents', icon: <Users className="h-5 w-5" /> },
   { label: 'Classes', to: '/school-admin/classes', icon: <BookOpen className="h-5 w-5" /> },
   { label: 'Subjects', to: '/school-admin/subjects', icon: <BookCopy className="h-5 w-5" /> },
   { label: 'Academic Years', to: '/school-admin/academic-years', icon: <CalendarDays className="h-5 w-5" /> },
@@ -129,6 +131,7 @@ export default function App() {
                   <Route index element={<SchoolAdminDashboard />} />
                   <Route path="students" element={<SchoolAdminStudents />} />
                   <Route path="staff" element={<SchoolAdminStaff />} />
+                  <Route path="parents" element={<SchoolAdminParents />} />
                   <Route path="classes" element={<SchoolAdminClasses />} />
                   <Route path="subjects" element={<SchoolAdminSubjects />} />
                   <Route path="academic-years" element={<SchoolAdminAcademicYears />} />
