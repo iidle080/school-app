@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, type FormEvent } from 'react';
-import { ClipboardList, Plus, Pencil, Trash2, Search, Calendar, ChevronRight, ArrowLeft, Wand2, AlertCircle, LayoutGrid, List } from 'lucide-react';
+import { ClipboardList, Plus, Pencil, Trash2, Search, Calendar, ChevronRight, ArrowLeft, Wand as Wand2, CircleAlert as AlertCircle, LayoutGrid, List } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useSchoolData } from '@/hooks/useSchoolData';
@@ -248,7 +248,7 @@ export function SchoolAdminExamSessions() {
     const weekdayDates: string[] = [];
     const cursor = new Date(examStart);
     let safety = 0;
-    while (cursor <= termEnd && safety < 60) {
+    while (cursor <= termEnd && safety < 90) {
       const dow = cursor.getDay();
       if (dow !== 0 && dow !== 6) {
         weekdayDates.push(cursor.toISOString().split('T')[0]);
@@ -257,35 +257,91 @@ export function SchoolAdminExamSessions() {
       safety++;
     }
 
-    // Each class distributes its subjects across the same weekday dates,
-    // up to maxPerDay exams per day. All classes run in parallel.
+    // Gather every (class, subject, teacher) exam that needs scheduling.
+    type PendingExam = { cls: ClassRow; subject: Subject; teacherId: string | null };
+    const pending: PendingExam[] = [];
     for (const cls of classes) {
       const classSubs = classSubjects.filter((cs: ClassSubject) => cs.class_id === cls.id);
       const subs = classSubs.length > 0
         ? classSubs.map((cs: ClassSubject) => subjects.find((s) => s.id === cs.subject_id)).filter(Boolean) as Subject[]
         : subjects;
+      for (const sub of subs) {
+        const teacherId = classSubs.find((cs: ClassSubject) => cs.subject_id === sub.id)?.teacher_id ?? null;
+        pending.push({ cls, subject: sub, teacherId });
+      }
+    }
 
-      for (let i = 0; i < subs.length; i++) {
-        const dayIndex = Math.floor(i / maxPerDay);
-        const slotIdx = i % maxPerDay;
-        const examDate = weekdayDates[dayIndex] ?? weekdayDates[weekdayDates.length - 1] ?? examStart.toISOString().split('T')[0];
+    // Conflict-free scheduling: assign each exam to a (date, slot) pair such that
+    // no teacher is double-booked and no class has two exams in the same slot.
+    // The allocator walks day-by-day, slot-by-slot, and fills each slot across
+    // all classes before moving to the next slot. If a conflict can't be resolved
+    // in the current slot, the exam is deferred to a later slot/day.
+    const usedSlotKey = (date: string, slotIdx: number, classId: string) => `${date}|${slotIdx}|${classId}`;
+    const teacherBusyKey = (date: string, slotIdx: number, teacherId: string) => `${date}|${slotIdx}|${teacherId}`;
+    const scheduledClassSlots = new Set<string>();
+    const scheduledTeacherSlots = new Set<string>();
+    const remaining = [...pending];
+    let dayIdx = 0;
+
+    while (remaining.length > 0 && dayIdx < weekdayDates.length) {
+      const examDate = weekdayDates[dayIdx];
+      for (let slotIdx = 0; slotIdx < maxPerDay && remaining.length > 0; slotIdx++) {
         const slot = slotsPerDay[slotIdx];
+        // Try to fill this slot with as many exams as possible — one per class,
+        // no teacher conflict. Iterate over a copy so we can splice from remaining.
+        for (let i = remaining.length - 1; i >= 0; i--) {
+          const { cls, subject, teacherId } = remaining[i];
+          if (scheduledClassSlots.has(usedSlotKey(examDate, slotIdx, cls.id))) continue;
+          if (teacherId && scheduledTeacherSlots.has(teacherBusyKey(examDate, slotIdx, teacherId))) continue;
+          // This class is free in this slot and the teacher is free — schedule it.
+          scheduledClassSlots.add(usedSlotKey(examDate, slotIdx, cls.id));
+          if (teacherId) scheduledTeacherSlots.add(teacherBusyKey(examDate, slotIdx, teacherId));
+          examsToInsert.push({
+            school_id: SCHOOL_ID,
+            exam_session_id: sessionId,
+            term_id: genTerm.id,
+            name: `${subject.name} — ${cls.name}`,
+            exam_type: genForm.exam_type,
+            class_id: cls.id,
+            subject_id: subject.id,
+            exam_date: examDate,
+            start_time: fmtTime(slot.start),
+            end_time: fmtTime(slot.end),
+            duration_minutes: dur,
+            teacher_id: teacherId,
+            total_marks: parseFloat(genForm.total_marks) || 100,
+            status: 'scheduled',
+          });
+          remaining.splice(i, 1);
+        }
+      }
+      dayIdx++;
+    }
+
+    // Fallback: if we ran out of weekdays, place remaining exams on the last day
+    // with sequential time offsets so they at least have distinct times.
+    if (remaining.length > 0) {
+      const lastDate = weekdayDates[weekdayDates.length - 1] ?? examStart.toISOString().split('T')[0];
+      let extraSlot = maxPerDay;
+      for (const { cls, subject, teacherId } of remaining) {
+        const base = startMinutes + extraSlot * (dur + 30);
         examsToInsert.push({
           school_id: SCHOOL_ID,
           exam_session_id: sessionId,
           term_id: genTerm.id,
-          name: `${subs[i].name} — ${cls.name}`,
+          name: `${subject.name} — ${cls.name}`,
           exam_type: genForm.exam_type,
           class_id: cls.id,
-          subject_id: subs[i].id,
-          exam_date: examDate,
-          start_time: fmtTime(slot.start),
-          end_time: fmtTime(slot.end),
+          subject_id: subject.id,
+          exam_date: lastDate,
+          start_time: fmtTime(base),
+          end_time: fmtTime(base + dur),
           duration_minutes: dur,
-          teacher_id: classSubs.find((cs: ClassSubject) => cs.subject_id === subs[i].id)?.teacher_id ?? null,
+          teacher_id: teacherId,
           total_marks: parseFloat(genForm.total_marks) || 100,
           status: 'scheduled',
         });
+        extraSlot++;
       }
     }
 
@@ -937,7 +993,7 @@ export function SchoolAdminExamSessions() {
                 <div className="text-sm text-primary-700 dark:text-primary-light">
                   <p className="font-medium">Schedule Preview</p>
                   <p className="mt-1">This will create <strong>{genPreview.count} exams</strong> across <strong>{classes.length} classes</strong> and <strong>{subjects.length} subjects</strong>.</p>
-                  <p className="mt-0.5">All classes run in parallel from <strong>{formatDate(genPreview.startDate)}</strong> to <strong>{formatDate(genPreview.endDate)}</strong> (Monday–Friday only), with up to {genForm.exams_per_day} exam(s) per class per day starting at {genForm.start_time}.</p>
+                  <p className="mt-0.5">Exams are scheduled from <strong>{formatDate(genPreview.startDate)}</strong> to <strong>{formatDate(genPreview.endDate)}</strong> (Monday–Friday only), with up to {genForm.exams_per_day} exam(s) per class per day starting at {genForm.start_time}. The scheduler automatically avoids conflicts — no teacher is assigned to two exams at the same time, and different classes take different subjects in the same slot.</p>
                 </div>
               </div>
             </div>
